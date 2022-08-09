@@ -1,0 +1,17 @@
+[package]
+name = "log_viewer"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tui = "0.18.0"
+crossterm = "0.24.0"
+regex = "1.6.0"
+lazy_static = "1.4.0"
+chrono = "0.4.20"
+walkdir = "2.3.2"
+indexmap = "1.9.1"
+clap = { version = "3.2.16", features = ["derive"] }
+dyn-clone = "1.0.9"
