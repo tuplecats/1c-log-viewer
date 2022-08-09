@@ -1,23 +1,69 @@
+use std::{
+    fs::File,
+    io,
+    io::Read,
+    ops::Index,
+    str::FromStr,
+    sync::mpsc::{channel, Receiver, Sender},
+};
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use indexmap::IndexMap;
-use std::fs::File;
-use std::io;
-use std::io::Read;
-use std::iter::Enumerate;
-use std::ops::Index;
-use std::slice::Iter;
-use std::str::FromStr;
-use std::sync::mpsc::{channel, Receiver, Sender};
 use walkdir::WalkDir;
+use crate::util::read_until;
 
-#[derive(Default, Debug, Clone)]
+mod compiler;
+mod value;
+pub mod logdata;
+
+pub use value::*;
+pub use compiler::{Compiler, Query};
+
+#[derive(Debug, Clone)]
 pub struct LogString {
-    pub time: chrono::NaiveDateTime,
-    pub fields: IndexMap<String, String>,
+    pub time: Value,
+    pub duration: Value,
+    pub event: Value,
+    pub process: Value,
+    pub thread: Value,
+    pub fields: IndexMap<String, Value>,
+}
+
+impl Default for LogString {
+    fn default() -> Self {
+        LogString {
+            time: Value::String(String::new()),
+            duration: Value::String(String::new()),
+            event: Value::String(String::new()),
+            process: Value::String(String::new()),
+            thread: Value::String(String::new()),
+            fields: IndexMap::new(),
+        }
+    }
 }
 
 unsafe impl Send for LogString {}
 unsafe impl Sync for LogString {}
+
+impl LogString {
+    pub fn set_value(&mut self, name: &str, value: Value) {
+        match name {
+            "process" => self.process = value,
+            "OSThread" => self.thread = value,
+            _ => { self.fields.insert(name.to_string(), value); },
+        }
+    }
+
+    pub fn get(&self, name: &str) -> Option<Value> {
+        match name {
+            "time" => Some(self.time.clone()),
+            "duration" => Some(self.duration.clone()),
+            "event" => Some(self.event.clone()),
+            "process" => Some(self.process.clone()),
+            "thread" => Some(self.thread.clone()),
+            _ => self.fields.get(name).map(|s| s.clone()),
+        }
+    }
+}
 
 enum ParseState {
     StartLogLine,
@@ -55,7 +101,27 @@ impl LogParser {
                 !e.file_type().is_dir() && e.file_name().to_string_lossy().ends_with(".log")
             });
 
-        for entry in walk {
+        let regex = regex::Regex::new(r#"^\d{8}[.]log$"#).unwrap();
+        let mut files = walk
+            .filter_map(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                if regex.is_match(&name) {
+                    let year = 2000 + name[0..2].parse::<i32>().unwrap();
+                    let month = name[2..4].parse::<u32>().unwrap();
+                    let day = name[4..6].parse::<u32>().unwrap();
+                    let hour = name[6..8].parse::<u32>().unwrap();
+                    Some((e, NaiveDate::from_ymd(year, month, day).and_hms(hour, 0, 0)))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        files.sort_by(|(_, name), (_, name2)| {
+            name.cmp(name2)
+        });
+
+        for (entry, _) in files {
             if regex::Regex::new(r#"^\d{8}[.]log$"#)
                 .unwrap()
                 .is_match(entry.file_name().to_string_lossy().as_ref())
@@ -96,17 +162,17 @@ impl LogParser {
 
         let data_str = data.as_str();
         let mut state = ParseState::StartLogLine;
-        let mut iter = data.as_bytes().iter().enumerate();
+        let mut iter = data.as_bytes().iter().map(|b| *b).enumerate();
         let mut last_index = 0;
 
         let mut key = "";
-        let mut value = "";
+        let mut value = Value::String(String::new());
         let mut log_string = LogString::default();
 
         loop {
             match state {
                 ParseState::StartLogLine => {
-                    let end = match Self::read_until(&mut iter, b',') {
+                    let end = match read_until(&mut iter, b',') {
                         Some(end) => end,
                         None => break,
                     };
@@ -140,7 +206,7 @@ impl LogParser {
                     let nanos_count = nanos.chars().count();
                     let nanos = u32::from_str(nanos).unwrap();
 
-                    log_string.time = match nanos_count {
+                    log_string.time = Value::DateTime(match nanos_count {
                         0..=3 => NaiveDateTime::new(
                             date.date(),
                             NaiveTime::from_hms_milli(date.time().hour(), minutes, seconds, nanos),
@@ -153,33 +219,32 @@ impl LogParser {
                             date.date(),
                             NaiveTime::from_hms_nano(date.time().hour(), minutes, seconds, nanos),
                         ),
-                    };
+                    });
+
+                    log_string.duration = Value::from(&time[(nanos_pos + 1)..]);
 
                     state = ParseState::EventField;
                     last_index = end + 1;
                 }
                 ParseState::EventField => {
-                    let end = Self::read_until(&mut iter, b',').unwrap();
-                    log_string.fields.insert(
-                        "event".to_string(),
-                        String::from(&data_str[last_index..end]),
-                    );
+                    let end = read_until(&mut iter, b',').unwrap();
+                    log_string.event = Value::from(&data_str[last_index..end]);
 
                     state = ParseState::Duration;
                     last_index = end + 1;
                 }
                 ParseState::Duration => {
-                    let end = Self::read_until(&mut iter, b',').unwrap();
-                    log_string.fields.insert(
-                        "duration".to_string(),
-                        String::from(&data_str[last_index..end]),
-                    );
+                    let end = read_until(&mut iter, b',').unwrap();
+                    // log_string.fields.insert(
+                    //     "duration".to_string(),
+                    //     String::from(&data_str[last_index..end]),
+                    // );
 
                     state = ParseState::Key;
                     last_index = end + 1;
                 }
                 ParseState::Key => {
-                    let end = Self::read_until(&mut iter, b'=').unwrap();
+                    let end = read_until(&mut iter, b'=').unwrap();
                     key = &data_str[last_index..end];
 
                     state = ParseState::Value;
@@ -190,13 +255,13 @@ impl LogParser {
                     loop {
                         match value_state {
                             ParseValueState::BeginParse => match iter.next() {
-                                Some((begin, &char))
-                                    if char == b',' || char == b'\r' || char == b'\n' =>
-                                {
-                                    value = "";
-                                    value_state = ParseValueState::Finish((begin, char));
-                                }
-                                Some((begin, &char)) if char == b'\'' || char == b'"' => {
+                                Some((begin, char))
+                                if char == b',' || char == b'\r' || char == b'\n' =>
+                                    {
+                                        value = Value::String(String::new());
+                                        value_state = ParseValueState::Finish((begin, char));
+                                    }
+                                Some((begin, char)) if char == b'\'' || char == b'"' => {
                                     last_index = begin + 1;
                                     value_state = ParseValueState::ReadValueUntil(char);
                                 }
@@ -208,7 +273,7 @@ impl LogParser {
                             },
                             ParseValueState::ReadValueUntil(quote) => {
                                 let mut end = 0;
-                                while let Some((index, &char)) = iter.next() {
+                                while let Some((index, char)) = iter.next() {
                                     match char {
                                         b'\'' | b'"' => {
                                             if data_str.as_bytes()[index + 1] == char {
@@ -224,16 +289,16 @@ impl LogParser {
                                     }
                                 }
 
-                                value = &data_str[last_index..end];
+                                value = Value::from(&data_str[last_index..end]);
 
                                 let next = iter.next().unwrap();
-                                value_state = ParseValueState::Finish((next.0, *next.1));
+                                value_state = ParseValueState::Finish((next.0, next.1));
                             }
                             ParseValueState::ReadValueToNext => {
-                                while let Some((end, &char)) = iter.next() {
+                                while let Some((end, char)) = iter.next() {
                                     match char {
                                         b'\r' | b'\n' | b',' => {
-                                            value = &data_str[last_index..end];
+                                            value = Value::from(&data_str[last_index..end]);
 
                                             value_state = ParseValueState::Finish((end, char));
                                             break;
@@ -248,23 +313,17 @@ impl LogParser {
                                         state = ParseState::Finish;
                                         iter.next().unwrap();
                                         last_index = index + 2;
-                                        log_string
-                                            .fields
-                                            .insert(key.to_string(), value.to_string());
+                                        log_string.set_value(key, value.clone());
                                     }
                                     b'\n' => {
                                         state = ParseState::Finish;
                                         last_index = index + 1;
-                                        log_string
-                                            .fields
-                                            .insert(key.to_string(), value.to_string());
+                                        log_string.set_value(key, value.clone());
                                     }
                                     b',' => {
                                         state = ParseState::Key;
                                         last_index = index + 1;
-                                        log_string
-                                            .fields
-                                            .insert(key.to_string(), value.to_string());
+                                        log_string.set_value(key, value.clone());
                                     }
                                     _ => unreachable!(),
                                 }
@@ -283,14 +342,5 @@ impl LogParser {
         }
 
         Ok(())
-    }
-
-    fn read_until(iter: &mut Enumerate<Iter<u8>>, search: u8) -> Option<usize> {
-        while let Some((index, &char)) = iter.next() {
-            if char == search {
-                return Some(index);
-            }
-        }
-        None
     }
 }

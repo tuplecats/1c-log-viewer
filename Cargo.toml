@@ -14,4 +14,5 @@ chrono = "0.4.20"
 walkdir = "2.3.2"
 indexmap = "1.9.1"
 clap = { version = "3.2.16", features = ["derive"] }
-dyn-clone = "1.0.9"
+thiserror = "1.0.32"
+cli-clipboard = "0.2.1"
