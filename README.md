@@ -3,6 +3,8 @@
 **1c_log_viewer** консольная программа позволяющая просматривать, фильтровать, анализировать
 технологический журнал 1С.
 
+![](https://github.com/tuplecats/1c-log-viewer/images/example.gif)
+
 ## Установка
 
 Используйте [Rust](https://www.rust-lang.org/tools/install) для установки 1c_log_viewer.
