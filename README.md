@@ -3,7 +3,7 @@
 **1c_log_viewer** консольная программа позволяющая просматривать, фильтровать, анализировать
 технологический журнал 1С.
 
-![](https://github.com/tuplecats/1c-log-viewer/images/example.gif)
+![](images/example.gif)
 
 ## Установка
 
