@@ -1,12 +1,3 @@
-pub fn read_until<T: PartialEq>(iter: &mut impl Iterator<Item = (usize, T)>, search: T) -> Option<usize> {
-    while let Some((index, char)) = iter.next() {
-        if char == search {
-            return Some(index);
-        }
-    }
-    None
-}
-
 pub fn sub_strings(string: &str, sub_len: usize) -> Vec<&str> {
     let mut subs = Vec::with_capacity(string.len() * 2 / sub_len);
     let mut iter = string.chars();
