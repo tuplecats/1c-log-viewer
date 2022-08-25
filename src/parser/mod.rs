@@ -287,14 +287,14 @@ impl Iterator for LineIter {
 pub struct LogParser;
 
 impl LogParser {
-    pub fn parse(dir: String) -> Receiver<LogString> {
+    pub fn parse(dir: String, date: Option<NaiveDateTime>) -> Receiver<LogString> {
         let (sender, receiver) = channel();
-        std::thread::spawn(move || LogParser::parse_dir(dir, sender));
+        std::thread::spawn(move || LogParser::parse_dir(dir, date, sender));
         receiver
     }
 
     // А может сделать итератор, который парсит
-    fn parse_dir(path: String, sender: Sender<LogString>) -> io::Result<()> {
+    fn parse_dir(path: String, date: Option<NaiveDateTime>, sender: Sender<LogString>) -> io::Result<()> {
         let walk = WalkDir::new(path)
             .follow_links(true)
             .into_iter()
@@ -312,7 +312,12 @@ impl LogParser {
                     let month = name[2..4].parse::<u32>().unwrap();
                     let day = name[4..6].parse::<u32>().unwrap();
                     let hour = name[6..8].parse::<u32>().unwrap();
-                    Some((e, NaiveDate::from_ymd(year, month, day).and_hms(hour, 0, 0)))
+
+                    let date_time = NaiveDate::from_ymd(year, month, day).and_hms(hour, 0, 0);
+                    match date {
+                        Some(date) if date_time < date => None,
+                        _ =>  Some((e, date_time))
+                    }
                 } else {
                     None
                 }
@@ -354,7 +359,18 @@ impl LogParser {
                         continue
                     }
 
-                    lines[index] = data.next();
+                    loop {
+                        match data.next() {
+                            Some(line) => match date {
+                                Some(date) if line.time < date => {},
+                                _ => {
+                                    lines[index] = Some(line);
+                                    break
+                                }
+                            },
+                            _ => lines[index] = None
+                        }
+                    }
                 }
 
                 let min = lines.iter()

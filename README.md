@@ -18,7 +18,11 @@ cargo install --git https://github.com/tuplecats/1c-log-viewer
 ### Параметры
 ````
 -d, --directory=PATH       Путь к директории с файлами логов 
-                           (Также ищет файлы в поддиректориях)
+                           (Также ищет файлы в поддиректориях) 
+                                                     
+--from=TIME                Временая точка начала чтения логов.
+                           Формат: now-{digit}{s/m/h/d/w}
+                           Пример: now-1d или now-30s
 ````
 
 ````bash

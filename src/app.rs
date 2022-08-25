@@ -1,6 +1,7 @@
 use std::{error::Error, time::Duration};
 use std::cell::RefCell;
 use std::rc::Rc;
+use chrono::NaiveDateTime;
 use crossterm::{
     event,
     event::{Event, KeyCode},
@@ -30,9 +31,6 @@ enum ActiveWidget {
 }
 
 pub struct App {
-    // parse info
-    pub filepath: String,
-
     pub table: Rc<RefCell<TableView>>,
     pub search: Rc<RefCell<LineEdit>>,
     pub text: Rc<RefCell<KeyValueView>>,
@@ -44,14 +42,26 @@ pub struct App {
 }
 
 impl App {
-    pub fn new<T: Into<String>>(dir: T, widths: Vec<Constraint>) -> Self {
+    pub fn new<T: Into<String>>(dir: T, date: Option<NaiveDateTime>) -> Self {
         let dir = dir.into();
-        let log_data = Rc::new(RefCell::new(LogCollection::new(LogParser::parse(dir.clone()))));
+        let widths = vec![
+            Constraint::Percentage(20),
+            Constraint::Percentage(20),
+            Constraint::Percentage(20),
+            Constraint::Percentage(20),
+            Constraint::Percentage(20),
+        ];
+
+        let log_data = Rc::new(RefCell::new(
+            LogCollection::new(
+                LogParser::parse(dir, date)
+            )
+        ));
+
         let mut table_view = TableView::new(widths);
         table_view.set_model(log_data.clone());
 
         let app = Self {
-            filepath: dir.into(),
             table: Rc::new(RefCell::new(table_view)),
             search: Rc::new(RefCell::new(LineEdit::new("Filter".into()))),
             text: Rc::new(RefCell::new(KeyValueView::new())),
