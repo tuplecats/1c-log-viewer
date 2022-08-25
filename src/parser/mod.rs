@@ -303,6 +303,7 @@ impl LogParser {
                 !e.file_type().is_dir() && e.file_name().to_string_lossy().ends_with(".log")
             });
 
+        let hour_date = date.map(|date| NaiveDate::from(date.date()).and_hms(date.hour(), 0, 0));
         let regex = regex::Regex::new(r#"^\d{8}[.]log$"#).unwrap();
         let mut files = walk
             .filter_map(|e| {
@@ -314,8 +315,8 @@ impl LogParser {
                     let hour = name[6..8].parse::<u32>().unwrap();
 
                     let date_time = NaiveDate::from_ymd(year, month, day).and_hms(hour, 0, 0);
-                    match date {
-                        Some(date) if date_time < date => None,
+                    match hour_date {
+                        Some(hour_date) if date_time < hour_date => None,
                         _ =>  Some((e, date_time))
                     }
                 } else {
@@ -368,7 +369,7 @@ impl LogParser {
                                     break
                                 }
                             },
-                            _ => lines[index] = None
+                            None => break
                         }
                     }
                 }
@@ -388,14 +389,14 @@ impl LogParser {
                     })
                     .map(|(index, _)| index);
 
+                if lines.iter().all(Option::is_none) {
+                    break
+                }
+
                 if let Some(min) = min {
                     let mut tmp = None;
                     std::mem::swap(&mut lines[min], &mut tmp);
                     sender.send(tmp.unwrap()).unwrap();
-                }
-
-                if lines.iter().all(Option::is_none) {
-                    break
                 }
             }
         }
