@@ -136,7 +136,7 @@ impl DataModel for LogCollection {
             "event" => Some(1),
             "duration" => Some(2),
             "process" => Some(3),
-            "thread" => Some(4),
+            "OSThread" => Some(4),
             _ => None,
         }
     }
@@ -147,7 +147,7 @@ impl DataModel for LogCollection {
             1 => Some(Cow::Borrowed("event")),
             2 => Some(Cow::Borrowed("duration")),
             3 => Some(Cow::Borrowed("process")),
-            4 => Some(Cow::Borrowed("thread")),
+            4 => Some(Cow::Borrowed("OSThread")),
             _ => None,
         }
     }
@@ -161,7 +161,7 @@ impl DataModel for LogCollection {
             (Some(line), 1) => Some(line.get("event").unwrap_or_default()),
             (Some(line), 2) => Some(line.get("duration").unwrap_or_default()),
             (Some(line), 3) => Some(line.get("process").unwrap_or_default()),
-            (Some(line), 4) => Some(line.get("thread").unwrap_or_default()),
+            (Some(line), 4) => Some(line.get("OSThread").unwrap_or_default()),
             _ => None,
         }
     }
