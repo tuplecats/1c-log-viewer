@@ -1,6 +1,7 @@
 use crate::ui::index::ModelIndex;
 use std::{any::Any, borrow::Cow};
 use std::fmt::Display;
+use std::rc::Rc;
 use tui::text::Text;
 use crate::parser::Value;
 
@@ -43,6 +44,10 @@ impl<T: Display> DataModel for Vec<T> {
     }
 
     fn data(&self, index: ModelIndex) -> Option<Value> {
-        self.get(index.row()).map(|s| Value::from(s.to_string().as_str()))
+        self.get(index.row()).map(|s| {
+            let string = s.to_string();
+            let len = string.len();
+            Value::new(Rc::new(string), 0, len)
+        })
     }
 }

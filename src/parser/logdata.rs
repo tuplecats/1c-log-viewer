@@ -28,7 +28,7 @@ impl Inner {
         };
 
         if let Some(filter) = &self.filter {
-            return filter.accept(line)
+            return filter.accept(&line.fields())
         }
 
         // Когда фильтр не указан, то строку принимаем всегда

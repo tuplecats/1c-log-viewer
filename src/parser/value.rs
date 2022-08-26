@@ -1,10 +1,65 @@
-use std::fmt::Display;
+use std::cmp::Ordering;
+use std::fmt::{Display, Formatter};
 use std::ops::Index;
+use std::rc::Rc;
 use chrono::NaiveDateTime;
 
 #[derive(Debug, Clone)]
+pub struct PartialString {
+    inner: Rc<String>,
+    begin: usize,
+    len: usize,
+}
+
+impl PartialString {
+    pub fn new(inner: Rc<String>, begin: usize, len: usize) -> Self {
+        Self {
+            inner,
+            begin,
+            len
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.inner.as_str()[self.begin..(self.begin + self.len)]
+    }
+}
+
+impl PartialEq for PartialString {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str().eq(other.as_str())
+    }
+}
+
+impl PartialOrd for PartialString {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.as_str().partial_cmp(other.as_str())
+    }
+}
+
+impl Eq for PartialString {
+
+}
+
+impl Display for PartialString {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl Default for PartialString {
+    fn default() -> Self {
+        PartialString {
+            inner: Rc::new("".to_string()),
+            begin: 0,
+            len: 0
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Value {
-    String(String),
+    String(PartialString),
     Number(f64),
     DateTime(NaiveDateTime),
     MultiValue(Vec<Value>),
@@ -12,11 +67,21 @@ pub enum Value {
 
 impl Default for Value {
     fn default() -> Self {
-        Value::String(String::new())
+        Value::String(PartialString::default())
     }
 }
 
 impl Value {
+    pub fn new(inner: Rc<String>, begin: usize, len: usize) -> Self {
+        let string = PartialString::new(inner, begin, len);
+        if let Ok(value) = string.as_str().parse::<f64>() {
+            Self::Number(value)
+        }
+        else {
+            Self::String(string)
+        }
+    }
+
     pub fn len(&self) -> usize {
         match self {
             Value::MultiValue(arr) => arr.len(),
@@ -43,15 +108,6 @@ impl Index<usize> for Value {
     }
 }
 
-impl From<&str> for Value {
-    fn from(s: &str) -> Self {
-        if let Ok(n) = s.parse::<f64>() {
-            Value::Number(n)
-        } else {
-            Value::String(s.to_string())
-        }
-    }
-}
 
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -89,7 +145,7 @@ impl PartialOrd for Value {
 impl PartialEq<String> for Value {
     fn eq(&self, other: &String) -> bool {
         match self {
-            Value::String(s) => s == other,
+            Value::String(s) => s.as_str() == other,
             _ => false,
         }
     }
@@ -98,7 +154,7 @@ impl PartialEq<String> for Value {
 impl PartialOrd<String> for Value {
     fn partial_cmp(&self, other: &String) -> Option<std::cmp::Ordering> {
         match self {
-            Value::String(s) => s.partial_cmp(other),
+            Value::String(s) => s.as_str().partial_cmp(other),
             _ => None,
         }
     }

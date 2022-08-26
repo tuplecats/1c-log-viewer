@@ -6,6 +6,7 @@ use std::{
 };
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, Seek, SeekFrom};
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use indexmap::IndexMap;
@@ -158,7 +159,7 @@ impl LogLine {
 
 struct LineIter {
     buffer: Arc<Mutex<BufReader<File>>>,
-    data: String,
+    data: Rc<String>,
     date: NaiveDateTime,
     last_index: usize,
     parse_range: bool,
@@ -168,7 +169,7 @@ impl LineIter {
     fn new(buffer: Arc<Mutex<BufReader<File>>>, data: String, date: NaiveDateTime, parse_range: bool) -> Self {
         LineIter {
             buffer,
-            data,
+            data: Rc::new(data),
             date,
             last_index: 0,
             parse_range,
@@ -181,7 +182,7 @@ impl LineIter {
         let mut gtime = self.date;
 
         let mut key = "";
-        let mut value = Value::String(String::new());
+        let mut value = Value::default();
         let mut log_string = FieldMap::new();
 
         loop {
@@ -234,7 +235,8 @@ impl LineIter {
                     };
 
                     if !self.parse_range {
-                        log_string.insert("duration", Value::from(&time[(nanos_pos + 1)..]));
+                        log_string.insert("time", Value::DateTime(gtime));
+                        log_string.insert("duration", Value::Number(time[(nanos_pos + 1)..].parse().unwrap()));
                     }
 
                     state = ParseState::EventField;
@@ -244,7 +246,7 @@ impl LineIter {
                     let size = self.data[self.last_index..].as_bytes().iter().position(|&byte| byte == b',').unwrap();
 
                     if !self.parse_range {
-                        log_string.insert("event", Value::from(&self.data[self.last_index..(self.last_index + size)]));
+                        log_string.insert("event", Value::new(self.data.clone(), self.last_index, size));
                     }
 
                     state = ParseState::Duration;
@@ -278,7 +280,7 @@ impl LineIter {
                                 Some(&char)
                                 if char == b',' || char == b'\r' || char == b'\n' =>
                                     {
-                                        value = Value::String(String::new());
+                                        value = Value::default();
                                         value_state = ParseValueState::Finish;
                                     }
                                 Some(&char) if char == b'\'' || char == b'"' => {
@@ -308,7 +310,7 @@ impl LineIter {
                                 }
 
                                 if !self.parse_range {
-                                    value = Value::from(&self.data[self.last_index..end]);
+                                    value = Value::new(self.data.clone(), self.last_index, end - self.last_index);
                                 }
 
                                 self.last_index = end + 1;
@@ -321,7 +323,7 @@ impl LineIter {
                                         b'\r' | b'\n' | b',' => {
 
                                             if !self.parse_range {
-                                                value = Value::from(&self.data[self.last_index..end]);
+                                                value = Value::new(self.data.clone(), self.last_index, end - self.last_index);
                                             }
 
                                             self.last_index = end;
