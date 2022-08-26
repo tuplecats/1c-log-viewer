@@ -322,7 +322,7 @@ impl Compiler {
             }
         }
         else {
-            Ok(Token::Date(NaiveDateTime::parse_from_str(&tmp, "%Y-%m-%d %H:%M:%S")?))
+            Ok(Token::Date(NaiveDateTime::parse_from_str(&tmp, "%Y-%m-%d %H:%M:%S%.9f")?))
         }
     }
 

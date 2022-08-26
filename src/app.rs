@@ -116,6 +116,7 @@ impl App {
                 let value = match value {
                     Value::String(s) => format!("\"{}\"", s),
                     Value::Number(n) => n.to_string(),
+                    Value::DateTime(n) => format!("'{}'", n.format("%Y-%m-%d %H:%M:%S%.9f")),
                     _ => unreachable!(),
                 };
 
