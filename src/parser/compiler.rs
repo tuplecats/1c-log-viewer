@@ -164,16 +164,16 @@ impl Query {
             Query::Equal(left, right) => {
                 match (left, right) {
                     (Token::Identifier(left), Token::String(right)) => {
-                        log_data.get(left).map(|x| x == *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x == right)).unwrap_or(false)
                     }
                     (Token::Identifier(left), Token::Number(right)) => {
-                        log_data.get(left).map(|x| x == *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x == right)).unwrap_or(false)
                     }
                     (Token::Identifier(left), Token::Regex(right)) => {
-                        log_data.get(left).map(|x| right.is_match(x.to_string().as_str())).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| right.is_match(x.to_string().as_str()))).unwrap_or(false)
                     }
                     (Token::Identifier(left), Token::Date(right)) => {
-                        log_data.get(left).map(|x| x == *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x == right)).unwrap_or(false)
                     }
                     _ => {
                         false
@@ -183,13 +183,13 @@ impl Query {
             Query::GE(left, right) => {
                 match (left, right) {
                     (Token::Identifier(left), Token::String(right)) => {
-                        log_data.get(left).map(|x| x >= *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x >= right)).unwrap_or(false)
                     }
                     (Token::Identifier(left), Token::Number(right)) => {
-                        log_data.get(left).map(|x| x >= *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x >= right)).unwrap_or(false)
                     }
                     (Token::Identifier(left), Token::Date(right)) => {
-                        log_data.get(left).map(|x| x >= *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x >= right)).unwrap_or(false)
                     }
                     _ => {
                         false
@@ -199,13 +199,13 @@ impl Query {
             Query::LE(left, right) => {
                 match (left, right) {
                     (Token::Identifier(left), Token::String(right)) => {
-                        log_data.get(left).map(|x| x <= *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x <= right)).unwrap_or(false)
                     }
                     (Token::Identifier(left), Token::Number(right)) => {
-                        log_data.get(left).map(|x| x <= *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x <= right)).unwrap_or(false)
                     }
                     (Token::Identifier(left), Token::Date(right)) => {
-                        log_data.get(left).map(|x| x <= *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x <= right)).unwrap_or(false)
                     }
                     _ => {
                         false
@@ -215,13 +215,13 @@ impl Query {
             Query::Greater(left, right) => {
                 match (left, right) {
                     (Token::Identifier(left), Token::String(right)) => {
-                        log_data.get(left).map(|x| x > *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x > right)).unwrap_or(false)
                     }
                     (Token::Identifier(left), Token::Number(right)) => {
-                        log_data.get(left).map(|x| x > *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x > right)).unwrap_or(false)
                     }
                     (Token::Identifier(left), Token::Date(right)) => {
-                        log_data.get(left).map(|x| x > *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x > right)).unwrap_or(false)
                     }
                     _ => {
                         false
@@ -231,13 +231,13 @@ impl Query {
             Query::Less(left, right) => {
                 match (left, right) {
                     (Token::Identifier(left), Token::String(right)) => {
-                        log_data.get(left).map(|x| x < *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x < right)).unwrap_or(false)
                     }
                     (Token::Identifier(left), Token::Number(right)) => {
-                        log_data.get(left).map(|x| x < *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x < right)).unwrap_or(false)
                     }
                     (Token::Identifier(left), Token::Date(right)) => {
-                        log_data.get(left).map(|x| x < *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x < right)).unwrap_or(false)
                     }
                     _ => {
                         false
@@ -247,13 +247,13 @@ impl Query {
             Query::NE(left, right) => {
                 match (left, right) {
                     (Token::Identifier(left), Token::String(right)) => {
-                        log_data.get(left).map(|x| x != *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x != right)).unwrap_or(false)
                     }
                     (Token::Identifier(left), Token::Number(right)) => {
-                        log_data.get(left).map(|x| x != *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x != right)).unwrap_or(false)
                     }
                     (Token::Identifier(left), Token::Date(right)) => {
-                        log_data.get(left).map(|x| x != *right).unwrap_or(false)
+                        log_data.get(left).map(|x| x.iter().any(|x| x != right)).unwrap_or(false)
                     }
                     _ => {
                         false

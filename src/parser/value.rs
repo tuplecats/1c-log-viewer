@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::ops::Index;
 use chrono::NaiveDateTime;
 
 #[derive(Debug, Clone)]
@@ -6,6 +7,34 @@ pub enum Value {
     String(String),
     Number(f64),
     DateTime(NaiveDateTime),
+    MultiValue(Vec<Value>),
+}
+
+impl Value {
+    pub fn len(&self) -> usize {
+        match self {
+            Value::MultiValue(arr) => arr.len(),
+            _ => 1,
+        }
+    }
+
+    pub fn iter(&self) -> Box<dyn Iterator<Item = &Value> + '_> {
+        match self {
+            Value::MultiValue(arr) => Box::new(arr.iter()),
+            _ => Box::new(std::iter::repeat(self).take(1)),
+        }
+    }
+}
+
+impl Index<usize> for Value {
+    type Output = Value;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match self {
+            Value::MultiValue(arr) => &arr[index],
+            _ => self,
+        }
+    }
 }
 
 impl From<&str> for Value {
@@ -24,6 +53,7 @@ impl Display for Value {
             Value::String(s) => write!(f, "{}", s),
             Value::Number(n) => write!(f, "{}", n),
             Value::DateTime(dt) => write!(f, "{}", dt),
+            Value::MultiValue(arr) => write!(f, "{:?}", arr),
         }
     }
 }

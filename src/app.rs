@@ -7,7 +7,6 @@ use crossterm::{
     event::{Event, KeyCode},
 };
 use crossterm::event::KeyModifiers;
-use indexmap::IndexMap;
 use tui::{
     backend::Backend,
     Frame,
@@ -17,7 +16,7 @@ use tui::style::{Color, Style};
 use tui::text::{Span, Spans, Text};
 use tui::widgets::Paragraph;
 use crate::{LogCollection, LogParser, ui::widgets::{WidgetExt, TableView, LineEdit}};
-use crate::parser::{Compiler, Value};
+use crate::parser::{Compiler, FieldMap, Value};
 use crate::ui::widgets::KeyValueView;
 
 #[derive(Default)]
@@ -106,7 +105,7 @@ impl App {
 
                 // Panic if we can't borrow. Because dont need reset state when filter from info widget.
                 if let Ok(mut borrowed) = text.try_borrow_mut() {
-                    borrowed.set_data(IndexMap::new());
+                    borrowed.set_data(FieldMap::new());
                 }
             }
         });

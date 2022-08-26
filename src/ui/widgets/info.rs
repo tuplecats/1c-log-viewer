@@ -2,12 +2,11 @@ use std::fmt::Debug;
 use std::mem;
 use cli_clipboard::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use indexmap::IndexMap;
 use tui::buffer::Buffer;
 use tui::layout::{Constraint, Direction, Layout, Rect};
 use tui::style::{Color, Style};
 use tui::widgets::{Block, Borders, Widget};
-use crate::parser::Value;
+use crate::parser::{FieldMap, Value};
 use crate::ui::widgets::WidgetExt;
 use crate::util::sub_strings;
 
@@ -35,14 +34,14 @@ impl Default for State {
 
 pub struct KeyValueView {
     state: State,
-    data: IndexMap<String, Value>,
+    data: FieldMap,
 
     focused: bool,
     visible: bool,
 
     width: u16,
     height: u16,
-    
+
     on_add_to_filter: Box<dyn FnMut((&String, &Value)) + 'static>,
 }
 
@@ -50,12 +49,12 @@ impl KeyValueView {
     pub fn new() -> Self {
         Self {
             state: State::default(),
-            data: IndexMap::new(),
+            data: FieldMap::new(),
             focused: false,
             visible: false,
             width: 0,
             height: 0,
-            
+
             on_add_to_filter: Box::new(|_| {}),
         }
     }
@@ -109,7 +108,7 @@ impl KeyValueView {
         }
     }
 
-    pub fn set_data(&mut self, data: IndexMap<String, Value>) {
+    pub fn set_data(&mut self, data: FieldMap) {
         self.data = data;
 
         self.state.rows_size.clear();

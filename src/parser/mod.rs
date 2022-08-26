@@ -17,13 +17,64 @@ pub use value::*;
 pub use compiler::{Compiler, Query};
 
 #[derive(Debug, Clone)]
+pub struct FieldMap {
+    values: IndexMap<String, Value>,
+}
+
+impl FieldMap {
+    pub fn new() -> FieldMap {
+        FieldMap {
+            values: IndexMap::with_capacity(8),
+        }
+    }
+
+    pub fn insert(&mut self, key: String, value: Value) {
+        if let Some(inner) = self.values.get_mut(&key) {
+            match inner {
+                Value::MultiValue(arr) => arr.push(value),
+                _ => *inner = Value::MultiValue(vec![inner.clone(), value])
+            }
+        }
+        else {
+            self.values.insert(key, value);
+        }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &Value)> {
+        self.values.iter()
+            .flat_map(|(a, b)| b.iter().map(|b| (a.as_str(), b)))
+    }
+
+    pub fn get(&self, name: impl AsRef<str>) -> Option<&Value> {
+        self.values.get(name.as_ref())
+    }
+
+    pub fn get_index(&self, index: usize) -> Option<(&String, &Value)> {
+        let mut inner_index = 0;
+        for value in self.values.iter() {
+            if inner_index + value.1.len() > index {
+                inner_index = index - inner_index;
+                return Some((value.0, &value.1[inner_index]))
+            }
+
+            inner_index += value.1.len();
+        }
+        None
+    }
+
+    pub fn len(&self) -> usize {
+        self.values.iter().map(|(_, v)| v).map(Value::len).sum()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct LogString {
     pub time: Value,
     pub duration: Value,
     pub event: Value,
     pub process: Value,
     pub thread: Value,
-    pub fields: IndexMap<String, Value>,
+    pub fields: FieldMap,
 }
 
 impl Default for LogString {
@@ -34,13 +85,10 @@ impl Default for LogString {
             event: Value::String(String::new()),
             process: Value::String(String::new()),
             thread: Value::String(String::new()),
-            fields: IndexMap::new(),
+            fields: FieldMap::new(),
         }
     }
 }
-
-unsafe impl Send for LogString {}
-unsafe impl Sync for LogString {}
 
 impl LogString {
     pub fn set_value(&mut self, name: &str, value: Value) {
@@ -51,14 +99,15 @@ impl LogString {
         }
     }
 
-    pub fn get(&self, name: &str) -> Option<Value> {
+    pub fn get<'a>(&'a self, name: &str) -> Option<&'a Value> {
         match name {
-            "time" => Some(self.time.clone()),
-            "duration" => Some(self.duration.clone()),
-            "event" => Some(self.event.clone()),
-            "process" => Some(self.process.clone()),
-            "thread" => Some(self.thread.clone()),
-            _ => self.fields.get(name).map(|s| s.clone()),
+            "time" => Some(&self.time),
+            "duration" => Some(&self.duration),
+            "event" => Some(&self.event),
+            "process" => Some(&self.process),
+            "thread" => Some(&self.thread),
+            //_ => Some(&self.thread)
+            _ => self.fields.get(name),
         }
     }
 }
