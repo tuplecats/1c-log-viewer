@@ -8,7 +8,6 @@ mod util;
 /// 2. Индексация по полям
 /// 3. Читать файлы и запоминать только байты конкретных данных
 
-
 use crate::parser::LogParser;
 use app::App;
 use clap::Parser;
@@ -23,6 +22,7 @@ use tui::{backend::CrosstermBackend, Terminal};
 
 use parser::logdata::LogCollection;
 use crate::util::parse_date;
+
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None, verbatim_doc_comment)]

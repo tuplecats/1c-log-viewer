@@ -122,7 +122,7 @@ pub enum Query {
 }
 
 impl Query {
-    pub fn accept(&self, log_data: &FieldMap) -> bool {
+    pub fn accept(&self, log_data: &LogString) -> bool {
         match self {
             Query::Expr(where_expr, _) => {
                 if let Some(where_expr) = where_expr {
@@ -145,7 +145,7 @@ impl Query {
                 //     }
                 // }
 
-                for (_, field) in log_data.iter() {
+                for (_, field) in log_data.fields().iter() {
                     if let Value::String(s) = field {
                         if regex.is_match(s) {
                             return true;

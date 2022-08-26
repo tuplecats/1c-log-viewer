@@ -103,7 +103,13 @@ impl LogString {
         let mut data = vec![0; self.size as usize];
         lock.read_exact(&mut data).unwrap();
 
-        let mut iter = LineIter::new(self.buf.clone(), String::from_utf8(data).unwrap(), self.time, false);
+        let mut iter = LineIter::new(
+            self.buf.clone(),
+            unsafe { String::from_utf8_unchecked(data) },
+            self.time,
+            false
+        );
+
         match iter.next().unwrap() {
             LogLine::Data(map) => map,
             _ => unreachable!()
@@ -237,7 +243,9 @@ impl LineIter {
                 ParseState::EventField => {
                     let size = self.data[self.last_index..].as_bytes().iter().position(|&byte| byte == b',').unwrap();
 
-                    log_string.insert("event", Value::from(&self.data[self.last_index..(self.last_index + size)]));
+                    if !self.parse_range {
+                        log_string.insert("event", Value::from(&self.data[self.last_index..(self.last_index + size)]));
+                    }
 
                     state = ParseState::Duration;
                     self.last_index += size + 1;
@@ -254,7 +262,10 @@ impl LineIter {
                 }
                 ParseState::Key => {
                     let size = self.data[self.last_index..].as_bytes().iter().position(|&byte| byte == b'=').unwrap();
-                    key = &self.data[self.last_index..(self.last_index + size)];
+
+                    if !self.parse_range {
+                        key = &self.data[self.last_index..(self.last_index + size)];
+                    }
 
                     state = ParseState::Value;
                     self.last_index += size + 1;
@@ -296,7 +307,9 @@ impl LineIter {
                                     end += 1;
                                 }
 
-                                value = Value::from(&self.data[self.last_index..end]);
+                                if !self.parse_range {
+                                    value = Value::from(&self.data[self.last_index..end]);
+                                }
 
                                 self.last_index = end + 1;
                                 value_state = ParseValueState::Finish;
@@ -306,7 +319,10 @@ impl LineIter {
                                 while let Some(&char) = self.data.as_bytes().get(end) {
                                     match char {
                                         b'\r' | b'\n' | b',' => {
-                                            value = Value::from(&self.data[self.last_index..end]);
+
+                                            if !self.parse_range {
+                                                value = Value::from(&self.data[self.last_index..end]);
+                                            }
 
                                             self.last_index = end;
                                             value_state = ParseValueState::Finish;
