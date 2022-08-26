@@ -28,7 +28,7 @@ impl Inner {
         };
 
         if let Some(filter) = &self.filter {
-            return filter.accept(line)
+            return filter.accept(&line.fields())
         }
 
         // Когда фильтр не указан, то строку принимаем всегда
@@ -157,11 +157,11 @@ impl DataModel for LogCollection {
         let line = this.mapping.get(index.row()).and_then(|i| this.lines.get(*i));
 
         match (line, index.column()) {
-            (Some(line), 0) => Some(line.time.clone()),
-            (Some(line), 1) => Some(line.event.clone()),
-            (Some(line), 2) => Some(line.duration.clone()),
-            (Some(line), 3) => Some(line.process.clone()),
-            (Some(line), 4) => Some(line.thread.clone()),
+            (Some(line), 0) => Some(line.get("time").unwrap_or_default()),
+            (Some(line), 1) => Some(line.get("event").unwrap_or_default()),
+            (Some(line), 2) => Some(line.get("duration").unwrap_or_default()),
+            (Some(line), 3) => Some(line.get("process").unwrap_or_default()),
+            (Some(line), 4) => Some(line.get("thread").unwrap_or_default()),
             _ => None,
         }
     }

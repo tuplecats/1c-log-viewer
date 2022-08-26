@@ -4,7 +4,9 @@ use std::{
     str::FromStr,
     sync::mpsc::{channel, Receiver, Sender},
 };
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
+use std::io::{BufReader, Seek, SeekFrom};
+use std::sync::{Arc, Mutex};
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use indexmap::IndexMap;
 use walkdir::{DirEntry, WalkDir};
@@ -24,11 +26,13 @@ pub struct FieldMap {
 impl FieldMap {
     pub fn new() -> FieldMap {
         FieldMap {
-            values: IndexMap::with_capacity(8),
+            values: IndexMap::with_capacity(16),
         }
     }
 
-    pub fn insert(&mut self, key: String, value: Value) {
+    pub fn insert<T: Into<String>>(&mut self, key: T, value: Value) {
+        let key = key.into();
+
         if let Some(inner) = self.values.get_mut(&key) {
             match inner {
                 Value::MultiValue(arr) => arr.push(value),
@@ -69,45 +73,47 @@ impl FieldMap {
 
 #[derive(Debug, Clone)]
 pub struct LogString {
-    pub time: Value,
-    pub duration: Value,
-    pub event: Value,
-    pub process: Value,
-    pub thread: Value,
-    pub fields: FieldMap,
-}
-
-impl Default for LogString {
-    fn default() -> Self {
-        LogString {
-            time: Value::String(String::new()),
-            duration: Value::String(String::new()),
-            event: Value::String(String::new()),
-            process: Value::String(String::new()),
-            thread: Value::String(String::new()),
-            fields: FieldMap::new(),
-        }
-    }
+    buf: Arc<Mutex<BufReader<File>>>,
+    time: NaiveDateTime,
+    begin: u64,
+    size: u64,
 }
 
 impl LogString {
-    pub fn set_value(&mut self, name: &str, value: Value) {
-        match name {
-            "process" => self.process = value,
-            "OSThread" => self.thread = value,
-            _ => { self.fields.insert(name.to_string(), value); },
+    pub fn new(buf: Arc<Mutex<BufReader<File>>>, time: NaiveDateTime, begin: u64, size: u64) -> Self  {
+        Self {
+            buf,
+            time,
+            begin,
+            size,
         }
     }
 
-    pub fn get<'a>(&'a self, name: &str) -> Option<&'a Value> {
+    pub fn begin(&self) -> u64 {
+        self.begin
+    }
+
+    pub fn len(&self) -> usize {
+        self.size as usize
+    }
+
+    pub fn fields(&self) -> FieldMap {
+        let mut lock = self.buf.lock().unwrap();
+        lock.seek(SeekFrom::Start(self.begin + 3)).unwrap();
+        let mut data = vec![0; self.size as usize];
+        lock.read_exact(&mut data).unwrap();
+
+        let mut iter = LineIter::new(self.buf.clone(), String::from_utf8(data).unwrap(), self.time, false);
+        match iter.next().unwrap() {
+            LogLine::Data(map) => map,
+            _ => unreachable!()
+        }
+    }
+
+    pub fn get(&self, name: &str) -> Option<Value> {
         match name {
-            "time" => Some(&self.time),
-            "duration" => Some(&self.duration),
-            "event" => Some(&self.event),
-            "process" => Some(&self.process),
-            "thread" => Some(&self.thread),
-            //_ => Some(&self.thread)
-            _ => self.fields.get(name),
+            "time" => Some(Value::DateTime(self.time)),
+            _ => self.fields().get(name).cloned()
         }
     }
 }
@@ -129,26 +135,48 @@ enum ParseValueState {
     Finish,
 }
 
+#[derive(Debug, Clone)]
+enum LogLine {
+    Range(LogString),
+    Data(FieldMap)
+}
+
+impl LogLine {
+    pub fn get(&self, name: &str) -> Option<Value> {
+        match self {
+            LogLine::Range(l) => l.get(name),
+            LogLine::Data(l) => l.get(name).cloned(),
+        }
+    }
+}
+
 struct LineIter {
+    buffer: Arc<Mutex<BufReader<File>>>,
     data: String,
     date: NaiveDateTime,
     last_index: usize,
+    parse_range: bool,
 }
 
 impl LineIter {
-    fn new(data: String, date: NaiveDateTime) -> Self {
+    fn new(buffer: Arc<Mutex<BufReader<File>>>, data: String, date: NaiveDateTime, parse_range: bool) -> Self {
         LineIter {
+            buffer,
             data,
             date,
             last_index: 0,
+            parse_range,
         }
     }
 
-    fn parse_line(&mut self) -> Option<LogString> {
+    fn parse_line(&mut self) -> Option<LogLine> {
         let mut state = ParseState::StartLogLine;
+        let begin = self.last_index;
+        let mut gtime = self.date;
+
         let mut key = "";
         let mut value = Value::String(String::new());
-        let mut log_string = LogString::default();
+        let mut log_string = FieldMap::new();
 
         loop {
             match state {
@@ -184,7 +212,7 @@ impl LineIter {
                     let nanos_count = nanos.chars().count();
                     let nanos = u32::from_str(nanos).unwrap();
 
-                    log_string.time = Value::DateTime(match nanos_count {
+                    gtime = match nanos_count {
                         0..=3 => NaiveDateTime::new(
                             self.date.date(),
                             NaiveTime::from_hms_milli(self.date.time().hour(), minutes, seconds, nanos),
@@ -197,16 +225,19 @@ impl LineIter {
                             self.date.date(),
                             NaiveTime::from_hms_nano(self.date.time().hour(), minutes, seconds, nanos),
                         ),
-                    });
+                    };
 
-                    log_string.duration = Value::from(&time[(nanos_pos + 1)..]);
+                    if !self.parse_range {
+                        log_string.insert("duration", Value::from(&time[(nanos_pos + 1)..]));
+                    }
 
                     state = ParseState::EventField;
                     self.last_index += size + 1;
                 }
                 ParseState::EventField => {
                     let size = self.data[self.last_index..].as_bytes().iter().position(|&byte| byte == b',').unwrap();
-                    log_string.event = Value::from(&self.data[self.last_index..(self.last_index + size)]);
+
+                    log_string.insert("event", Value::from(&self.data[self.last_index..(self.last_index + size)]));
 
                     state = ParseState::Duration;
                     self.last_index += size + 1;
@@ -291,17 +322,26 @@ impl LineIter {
                                     Some(b'\r') => {
                                         state = ParseState::Finish;
                                         self.last_index += 2;
-                                        log_string.set_value(key, value.clone());
+
+                                        if !self.parse_range {
+                                            log_string.insert(key, value.clone());
+                                        }
                                     }
                                     Some(b'\n') => {
                                         state = ParseState::Finish;
                                         self.last_index += 1;
-                                        log_string.set_value(key, value.clone());
+
+                                        if !self.parse_range {
+                                            log_string.insert(key, value.clone());
+                                        }
                                     }
                                     Some(b',') => {
                                         state = ParseState::Key;
                                         self.last_index += 1;
-                                        log_string.set_value(key, value.clone());
+
+                                        if !self.parse_range {
+                                            log_string.insert(key, value.clone());
+                                        }
                                     }
                                     _ => unreachable!(),
                                 }
@@ -311,7 +351,10 @@ impl LineIter {
                     }
                 }
                 ParseState::Finish => {
-                    return Some(log_string);
+                    return match self.parse_range {
+                        true => Some(LogLine::Range(LogString::new(self.buffer.clone(), gtime, begin as u64, (self.last_index - begin) as u64))),
+                        false => Some(LogLine::Data(log_string))
+                    };
                 }
             }
         }
@@ -322,7 +365,7 @@ impl LineIter {
 
 
 impl Iterator for LineIter {
-    type Item = LogString;
+    type Item = LogLine;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.last_index >= self.data.len() {
@@ -396,9 +439,9 @@ impl LogParser {
                 .map(|(entry, time)| {
                     let mut file = OpenOptions::new().read(true).open(entry.path()).unwrap();
                     let mut data = String::new();
+                    file.seek(SeekFrom::Start(3)).unwrap();
                     file.read_to_string(&mut data).unwrap();
-                    data.remove(0);
-                    LineIter::new(data, time)
+                    LineIter::new(Arc::new(Mutex::new(BufReader::new(file))), data, time, true)
                 })
                 .collect::<Vec<_>>();
 
@@ -412,7 +455,7 @@ impl LogParser {
                     loop {
                         match data.next() {
                             Some(line) => match date {
-                                Some(date) if line.time < date => {},
+                                Some(date) if line.get("time").unwrap() < date => {},
                                 _ => {
                                     lines[index] = Some(line);
                                     break
@@ -434,7 +477,7 @@ impl LogParser {
                         }
                     })
                     .min_by(|(_, value1), (_, value2)| {
-                        value1.time.partial_cmp(&value2.time).unwrap()
+                        value1.get("time").unwrap().partial_cmp(&value2.get("time").unwrap()).unwrap()
                     })
                     .map(|(index, _)| index);
 
@@ -445,7 +488,10 @@ impl LogParser {
                 if let Some(min) = min {
                     let mut tmp = None;
                     std::mem::swap(&mut lines[min], &mut tmp);
-                    sender.send(tmp.unwrap()).unwrap();
+                    match tmp {
+                        Some(LogLine::Range(r)) => sender.send(r).unwrap(),
+                        _ => unreachable!()
+                    }
                 }
             }
         }

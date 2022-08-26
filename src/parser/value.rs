@@ -10,6 +10,12 @@ pub enum Value {
     MultiValue(Vec<Value>),
 }
 
+impl Default for Value {
+    fn default() -> Self {
+        Value::String(String::new())
+    }
+}
+
 impl Value {
     pub fn len(&self) -> usize {
         match self {

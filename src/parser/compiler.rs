@@ -4,7 +4,7 @@ use std::slice::Iter;
 use std::str::Chars;
 use chrono::{Duration, NaiveDateTime};
 use regex::Regex;
-use crate::parser::{LogString, Value};
+use crate::parser::{FieldMap, LogString, Value};
 use thiserror::Error;
 
 #[derive(Debug, Clone)]
@@ -122,7 +122,7 @@ pub enum Query {
 }
 
 impl Query {
-    pub fn accept(&self, log_data: &LogString) -> bool {
+    pub fn accept(&self, log_data: &FieldMap) -> bool {
         match self {
             Query::Expr(where_expr, _) => {
                 if let Some(where_expr) = where_expr {
@@ -133,19 +133,19 @@ impl Query {
                 true
             }
             Query::Regex(regex) => {
-                if let Value::String(s) = &log_data.event {
-                    if regex.is_match(&s) {
-                        return true
-                    }
-                }
+                // if let Value::String(s) = fields.get("event").unwrap() {
+                //     if regex.is_match(&s) {
+                //         return true
+                //     }
+                // }
+                //
+                // if let Value::String(s) = fields.get("process").unwrap() {
+                //     if regex.is_match(&s) {
+                //         return true
+                //     }
+                // }
 
-                if let Value::String(s) = &log_data.process {
-                    if regex.is_match(&s) {
-                        return true
-                    }
-                }
-
-                for (_, field) in log_data.fields.iter() {
+                for (_, field) in log_data.iter() {
                     if let Value::String(s) = field {
                         if regex.is_match(s) {
                             return true;
