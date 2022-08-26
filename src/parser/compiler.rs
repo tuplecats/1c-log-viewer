@@ -505,18 +505,18 @@ impl Compiler {
 
     fn compile_term(&self, iter: &mut Peekable<Iter<Token>>) -> Result<Query, ParseError> {
         let mut ast = self.compile_condition(iter)?;
-        while let Some(Token::AND) = iter.peek() {
+        while let Some(Token::OR) = iter.peek() {
             iter.next();
-            ast = Query::And(Box::new(ast), Box::new(self.compile_condition(iter)?));
+            ast = Query::Or(Box::new(ast), Box::new(self.compile_condition(iter)?));
         }
         Ok(ast)
     }
 
     fn compile_expression(&self, iter: &mut Peekable<Iter<Token>>) -> Result<Query, ParseError> {
         let mut ast = self.compile_term(iter)?;
-        while let Some(Token::OR) = iter.peek() {
+        while let Some(Token::AND) = iter.peek() {
             iter.next();
-            ast = Query::Or(Box::new(ast), Box::new(self.compile_term(iter)?));
+            ast = Query::And(Box::new(ast), Box::new(self.compile_term(iter)?));
         }
         Ok(ast)
     }
