@@ -1,12 +1,13 @@
-use std::cell::RefCell;
-use std::mem;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use tui::buffer::Buffer;
-use tui::layout::Rect;
-use tui::style::{Color, Modifier, Style};
-use tui::text::{Span, Spans};
-use tui::widgets::{Block, Borders, Widget};
 use crate::ui::widgets::WidgetExt;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::{cell::RefCell, mem};
+use tui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    text::{Span, Spans},
+    widgets::{Block, Borders, Widget},
+};
 
 pub struct LineEdit {
     name: String,
@@ -60,23 +61,30 @@ impl LineEdit {
 
     pub fn scroll_to_end(&self) {
         let width = self.width().saturating_sub(2);
-        let cursor = if self.text.len() as u16 > width { width } else { self.text.len() as u16 };
-        *self.cwp.borrow_mut() = (cursor, width, self.text.len().saturating_sub(width as usize));
+        let cursor = if self.text.len() as u16 > width {
+            width
+        } else {
+            self.text.len() as u16
+        };
+        *self.cwp.borrow_mut() = (
+            cursor,
+            width,
+            self.text.len().saturating_sub(width as usize),
+        );
     }
 
     pub fn scroll(&self, right: bool) {
         let (mut cursor, width, mut position) = *self.cwp.borrow();
-        if right { // go forward
+        if right {
+            // go forward
             if (cursor as usize + position) < self.text.len() {
                 if cursor.saturating_add(1) >= width {
                     position = position.saturating_add(1);
-                }
-                else {
+                } else {
                     cursor = cursor.saturating_add(1);
                 }
             }
-        }
-        else {
+        } else {
             if position.saturating_sub(1) == position {
                 cursor = cursor.saturating_sub(1);
             } else {
@@ -142,13 +150,19 @@ impl WidgetExt for LineEdit {
 
     fn key_press_event(&mut self, event: KeyEvent) {
         match event {
-            KeyEvent { code: KeyCode::Char(char), .. } => {
+            KeyEvent {
+                code: KeyCode::Char(char),
+                ..
+            } => {
                 let (cursor, _, position) = *self.cwp.borrow();
-                self.text.insert(cursor as usize + position,char);
+                self.text.insert(cursor as usize + position, char);
                 self.scroll(true);
                 self.emit_on_changed();
-            },
-            KeyEvent { code: KeyCode::Backspace, modifiers: KeyModifiers::NONE } => {
+            }
+            KeyEvent {
+                code: KeyCode::Backspace,
+                modifiers: KeyModifiers::NONE,
+            } => {
                 let (cursor, _, position) = *self.cwp.borrow();
                 let index = cursor as usize + position;
                 if index.saturating_sub(1) != index {
@@ -156,22 +170,30 @@ impl WidgetExt for LineEdit {
                     self.scroll(false);
                     self.emit_on_changed();
                 }
-            },
-            KeyEvent { code: KeyCode::Delete, modifiers: KeyModifiers::NONE } => {
+            }
+            KeyEvent {
+                code: KeyCode::Delete,
+                modifiers: KeyModifiers::NONE,
+            } => {
                 let (cursor, _, position) = *self.cwp.borrow();
                 let index = cursor as usize + position;
                 if index < self.text.len() {
                     self.text.remove(index);
                     self.emit_on_changed();
                 }
-            },
-            KeyEvent { code: KeyCode::Right, modifiers: KeyModifiers::NONE } => {
-                self.scroll(true)
-            },
-            KeyEvent { code: KeyCode::Left, modifiers: KeyModifiers::NONE } => {
-                self.scroll(false)
-            },
-            KeyEvent { code: KeyCode::Backspace, modifiers: KeyModifiers::CONTROL } => {
+            }
+            KeyEvent {
+                code: KeyCode::Right,
+                modifiers: KeyModifiers::NONE,
+            } => self.scroll(true),
+            KeyEvent {
+                code: KeyCode::Left,
+                modifiers: KeyModifiers::NONE,
+            } => self.scroll(false),
+            KeyEvent {
+                code: KeyCode::Backspace,
+                modifiers: KeyModifiers::CONTROL,
+            } => {
                 self.text.clear();
                 self.scroll_to_start();
                 self.emit_on_changed();
@@ -203,9 +225,7 @@ impl<'a> Widget for Renderer<'a> {
         }
 
         let border_text = match !self.0.border_text.is_empty() {
-            true if self.0.name.is_empty() => {
-                self.0.border_text.clone()
-            },
+            true if self.0.name.is_empty() => self.0.border_text.clone(),
             true => {
                 format!("{} | {}", self.0.name, self.0.border_text)
             }
@@ -214,7 +234,7 @@ impl<'a> Widget for Renderer<'a> {
 
         let block_style = match self.0.focused() {
             true => Style::default().fg(Color::LightYellow),
-            false => Style::default()
+            false => Style::default(),
         };
         let block = Block::default()
             .borders(Borders::ALL)
@@ -227,7 +247,6 @@ impl<'a> Widget for Renderer<'a> {
             inner_area
         };
 
-
         let (cursor, mut width, position) = *self.0.cwp.borrow();
         if width != input_area.width {
             width = input_area.width;
@@ -237,9 +256,31 @@ impl<'a> Widget for Renderer<'a> {
         let end_length = width.saturating_sub(cursor_pos as u16) as usize;
 
         let text = Spans::from(vec![
-            Span::raw(self.0.text.chars().skip(position).take(cursor as usize).collect::<String>()),
-            Span::styled(self.0.text.chars().nth(cursor_pos).map(String::from).unwrap_or(String::from(" ")), Style::default().add_modifier(Modifier::REVERSED)),
-            Span::raw(self.0.text.chars().skip(cursor_pos + 1).take(end_length).collect::<String>())
+            Span::raw(
+                self.0
+                    .text
+                    .chars()
+                    .skip(position)
+                    .take(cursor as usize)
+                    .collect::<String>(),
+            ),
+            Span::styled(
+                self.0
+                    .text
+                    .chars()
+                    .nth(cursor_pos)
+                    .map(String::from)
+                    .unwrap_or(String::from(" ")),
+                Style::default().add_modifier(Modifier::REVERSED),
+            ),
+            Span::raw(
+                self.0
+                    .text
+                    .chars()
+                    .skip(cursor_pos + 1)
+                    .take(end_length)
+                    .collect::<String>(),
+            ),
         ]);
 
         buf.set_spans(input_area.x, input_area.y, &text, width);

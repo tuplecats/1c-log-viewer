@@ -1,15 +1,14 @@
 use crossterm::event::KeyEvent;
 
+mod info;
 mod lineedit;
 mod table;
-mod info;
 
-pub use table::*;
 pub use info::*;
 pub use lineedit::*;
+pub use table::*;
 
 pub trait WidgetExt {
-
     fn set_focus(&mut self, _focus: bool) {}
 
     fn focused(&self) -> bool {
@@ -22,9 +21,13 @@ pub trait WidgetExt {
 
     fn set_visible(&mut self, _visible: bool) {}
 
-    fn show(&mut self) { self.set_visible(true) }
+    fn show(&mut self) {
+        self.set_visible(true)
+    }
 
-    fn hide(&mut self) { self.set_visible(false) }
+    fn hide(&mut self) {
+        self.set_visible(false)
+    }
 
     fn key_press_event(&mut self, _event: KeyEvent) {}
 

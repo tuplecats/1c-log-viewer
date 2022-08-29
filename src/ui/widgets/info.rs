@@ -1,14 +1,17 @@
-use std::fmt::Debug;
-use std::mem;
+use crate::{
+    parser::{FieldMap, Value},
+    ui::widgets::WidgetExt,
+    util::sub_strings,
+};
 use cli_clipboard::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use tui::buffer::Buffer;
-use tui::layout::{Constraint, Direction, Layout, Rect};
-use tui::style::{Color, Style};
-use tui::widgets::{Block, Borders, Widget};
-use crate::parser::{FieldMap, Value};
-use crate::ui::widgets::WidgetExt;
-use crate::util::sub_strings;
+use std::{fmt::Debug, mem};
+use tui::{
+    buffer::Buffer,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Style},
+    widgets::{Block, Borders, Widget},
+};
 
 struct State {
     pub offset: usize,
@@ -18,7 +21,11 @@ struct State {
 
 impl Debug for State {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "offset: {}, index: {}, row_size: {:?}", self.offset, self.index, self.rows_size)
+        write!(
+            f,
+            "offset: {}, index: {}, row_size: {:?}",
+            self.offset, self.index, self.rows_size
+        )
     }
 }
 
@@ -34,7 +41,7 @@ impl Default for State {
 
 pub struct KeyValueView {
     state: State,
-    data: FieldMap,
+    data: FieldMap<'static>,
 
     focused: bool,
     visible: bool,
@@ -42,7 +49,7 @@ pub struct KeyValueView {
     width: u16,
     height: u16,
 
-    on_add_to_filter: Box<dyn FnMut((&String, &Value)) + 'static>,
+    on_add_to_filter: Box<dyn FnMut((String, &Value)) + 'static>,
 }
 
 impl KeyValueView {
@@ -81,7 +88,11 @@ impl KeyValueView {
     }
 
     fn next(&mut self) {
-        self.state.index = self.state.index.saturating_add(1).min(self.data.len().saturating_sub(1));
+        self.state.index = self
+            .state
+            .index
+            .saturating_add(1)
+            .min(self.data.len().saturating_sub(1));
         self.calculate_row_bounds();
     }
 
@@ -108,7 +119,7 @@ impl KeyValueView {
         }
     }
 
-    pub fn set_data(&mut self, data: FieldMap) {
+    pub fn set_data(&mut self, data: FieldMap<'static>) {
         self.data = data;
 
         self.state.rows_size.clear();
@@ -122,10 +133,10 @@ impl KeyValueView {
         Renderer(&self)
     }
 
-    pub fn on_add_to_filter(&mut self, callback: impl FnMut((&String, &Value)) + 'static) {
+    pub fn on_add_to_filter(&mut self, callback: impl FnMut((String, &Value)) + 'static) {
         self.on_add_to_filter = Box::new(callback);
     }
-    
+
     fn emit_add_to_filter(&mut self) {
         let mut on_add_to_filter = mem::replace(&mut self.on_add_to_filter, Box::new(|_| {}));
         on_add_to_filter(self.data.get_index(self.state.index).unwrap());
@@ -152,35 +163,51 @@ impl WidgetExt for KeyValueView {
 
     fn key_press_event(&mut self, event: KeyEvent) {
         match event {
-            KeyEvent { code: KeyCode::Down, modifiers: KeyModifiers::NONE } => {
+            KeyEvent {
+                code: KeyCode::Down,
+                modifiers: KeyModifiers::NONE,
+            } => {
                 self.next();
-            },
-            KeyEvent { code: KeyCode::Up, modifiers: KeyModifiers::NONE } => {
+            }
+            KeyEvent {
+                code: KeyCode::Up,
+                modifiers: KeyModifiers::NONE,
+            } => {
                 self.prev();
-            },
-            KeyEvent { code: KeyCode::Char('c'), modifiers: KeyModifiers::NONE } => {
+            }
+            KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers: KeyModifiers::NONE,
+            } => {
                 if let Ok(mut ctx) = ClipboardContext::new() {
                     if let Some((_, value)) = self.data.get_index(self.state.index) {
-                        if let Ok(_) = ctx.set_contents(value.to_string()) {
-
-                        }
+                        if let Ok(_) = ctx.set_contents(value.to_string()) {}
                     }
                 }
-            },
-            KeyEvent { code: KeyCode::Char('f'), modifiers: KeyModifiers::NONE } => {
+            }
+            KeyEvent {
+                code: KeyCode::Char('f'),
+                modifiers: KeyModifiers::NONE,
+            } => {
                 if self.data.len() > 0 {
                     self.emit_add_to_filter();
                 }
-            },
-            KeyEvent { code: KeyCode::PageUp, modifiers: KeyModifiers::NONE } => {
+            }
+            KeyEvent {
+                code: KeyCode::PageUp,
+                modifiers: KeyModifiers::NONE,
+            } => {
                 self.state.index = 0;
                 self.state.offset = 0;
                 self.calculate_row_bounds();
-            },
-            KeyEvent { code: KeyCode::PageDown, modifiers: KeyModifiers::NONE } => {
+            }
+            KeyEvent {
+                code: KeyCode::PageDown,
+                modifiers: KeyModifiers::NONE,
+            } => {
                 self.state.index = self.data.len().saturating_sub(1);
                 self.calculate_row_bounds();
-            },
+            }
             _ => {}
         }
     }
@@ -207,12 +234,12 @@ struct Renderer<'a>(&'a KeyValueView);
 impl<'a> Widget for Renderer<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if area.area() == 0 {
-            return
+            return;
         }
 
         let block_style = match self.0.focused() {
             true => Style::default().fg(Color::LightYellow),
-            false => Style::default()
+            false => Style::default(),
         };
         let block = Block::default()
             .borders(Borders::ALL)
@@ -232,7 +259,7 @@ impl<'a> Widget for Renderer<'a> {
 
         // Draw header
         if area.area() == 0 {
-            return
+            return;
         }
 
         buf.set_string(rects[0].left(), rects[0].top(), "Name", Style::default());
@@ -244,7 +271,7 @@ impl<'a> Widget for Renderer<'a> {
         let mut rendered_lines = 1 as u16;
         for (i, (k, v)) in self.0.data.iter().enumerate().skip(self.0.state.offset) {
             if rendered_lines >= available_height {
-                break
+                break;
             }
 
             let style = if i == self.0.state.index {
@@ -253,15 +280,26 @@ impl<'a> Widget for Renderer<'a> {
                 Style::default()
             };
 
-            buf.set_string(rects[0].left(), rects[1].top() + rendered_lines as u16, k, style);
+            buf.set_string(
+                rects[0].left(),
+                rects[1].top() + rendered_lines as u16,
+                k,
+                style,
+            );
 
             let v = v.to_string();
             let splits = sub_strings(v.as_str(), width as usize);
-            splits.iter()
+            splits
+                .iter()
                 .take(available_height.saturating_sub(rendered_lines) as usize)
                 .enumerate()
                 .for_each(|(index, s)| {
-                    buf.set_string(rects[1].left(), rects[1].top() + rendered_lines + index as u16, s, style);
+                    buf.set_string(
+                        rects[1].left(),
+                        rects[1].top() + rendered_lines + index as u16,
+                        s,
+                        style,
+                    );
                 });
 
             rendered_lines += splits.len().max(1) as u16;

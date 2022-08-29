@@ -1,16 +1,21 @@
-use std::fmt::Display;
-use std::ops::Index;
 use chrono::NaiveDateTime;
+use std::{borrow::Cow, fmt::Display, ops::Index};
 
 #[derive(Debug, Clone)]
-pub enum Value {
-    String(String),
+pub enum Value<'a> {
+    String(Cow<'a, str>),
     Number(f64),
     DateTime(NaiveDateTime),
-    MultiValue(Vec<Value>),
+    MultiValue(Vec<Value<'a>>),
 }
 
-impl Value {
+impl<'a> Default for Value<'a> {
+    fn default() -> Self {
+        Value::String(Cow::Owned(String::new()))
+    }
+}
+
+impl<'a> Value<'a> {
     pub fn len(&self) -> usize {
         match self {
             Value::MultiValue(arr) => arr.len(),
@@ -26,8 +31,8 @@ impl Value {
     }
 }
 
-impl Index<usize> for Value {
-    type Output = Value;
+impl<'a> Index<usize> for Value<'a> {
+    type Output = Value<'a>;
 
     fn index(&self, index: usize) -> &Self::Output {
         match self {
@@ -37,17 +42,27 @@ impl Index<usize> for Value {
     }
 }
 
-impl From<&str> for Value {
-    fn from(s: &str) -> Self {
-        if let Ok(n) = s.parse::<f64>() {
-            Value::Number(n)
+impl<'a> From<&'a str> for Value<'a> {
+    fn from(string: &'a str) -> Self {
+        if let Ok(value) = string.parse::<f64>() {
+            Self::Number(value)
         } else {
-            Value::String(s.to_string())
+            Self::String(Cow::from(string))
         }
     }
 }
 
-impl Display for Value {
+impl<'a> From<String> for Value<'a> {
+    fn from(string: String) -> Self {
+        if let Ok(value) = string.as_str().parse::<f64>() {
+            Self::Number(value)
+        } else {
+            Self::String(Cow::from(string))
+        }
+    }
+}
+
+impl<'a> Display for Value<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Value::String(s) => write!(f, "{}", s),
@@ -58,7 +73,7 @@ impl Display for Value {
     }
 }
 
-impl PartialEq for Value {
+impl<'a> PartialEq for Value<'a> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Value::String(s1), Value::String(s2)) => s1 == s2,
@@ -69,7 +84,7 @@ impl PartialEq for Value {
     }
 }
 
-impl PartialOrd for Value {
+impl<'a> PartialOrd for Value<'a> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         match (self, other) {
             (Value::String(s1), Value::String(s2)) => s1.partial_cmp(s2),
@@ -80,25 +95,25 @@ impl PartialOrd for Value {
     }
 }
 
-impl PartialEq<String> for Value {
+impl<'a> PartialEq<String> for Value<'a> {
     fn eq(&self, other: &String) -> bool {
         match self {
-            Value::String(s) => s == other,
+            Value::String(s) => s.as_ref() == other,
             _ => false,
         }
     }
 }
 
-impl PartialOrd<String> for Value {
+impl<'a> PartialOrd<String> for Value<'a> {
     fn partial_cmp(&self, other: &String) -> Option<std::cmp::Ordering> {
         match self {
-            Value::String(s) => s.partial_cmp(other),
+            Value::String(s) => s.as_ref().partial_cmp(other),
             _ => None,
         }
     }
 }
 
-impl PartialEq<f64> for Value {
+impl<'a> PartialEq<f64> for Value<'a> {
     fn eq(&self, other: &f64) -> bool {
         match self {
             Value::Number(n) => n == other,
@@ -107,7 +122,7 @@ impl PartialEq<f64> for Value {
     }
 }
 
-impl PartialOrd<f64> for Value {
+impl<'a> PartialOrd<f64> for Value<'a> {
     fn partial_cmp(&self, other: &f64) -> Option<std::cmp::Ordering> {
         match self {
             Value::Number(n) => n.partial_cmp(other),
@@ -116,7 +131,7 @@ impl PartialOrd<f64> for Value {
     }
 }
 
-impl PartialEq<NaiveDateTime> for Value {
+impl<'a> PartialEq<NaiveDateTime> for Value<'a> {
     fn eq(&self, other: &NaiveDateTime) -> bool {
         match self {
             Value::DateTime(dt) => dt == other,
@@ -125,7 +140,7 @@ impl PartialEq<NaiveDateTime> for Value {
     }
 }
 
-impl PartialOrd<NaiveDateTime> for Value {
+impl<'a> PartialOrd<NaiveDateTime> for Value<'a> {
     fn partial_cmp(&self, other: &NaiveDateTime) -> Option<std::cmp::Ordering> {
         match self {
             Value::DateTime(dt) => dt.partial_cmp(other),

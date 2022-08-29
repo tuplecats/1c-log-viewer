@@ -1,11 +1,45 @@
-use std::fmt::{Display, Formatter};
-use std::iter::Peekable;
-use std::slice::Iter;
-use std::str::Chars;
+use crate::parser::{FieldMap, Value};
 use chrono::{Duration, NaiveDateTime};
 use regex::Regex;
-use crate::parser::{LogString, Value};
+use std::{
+    fmt::{Display, Formatter},
+    iter::Peekable,
+    ops::Deref,
+    slice::Iter,
+    str::Chars,
+};
 use thiserror::Error;
+
+#[derive(Debug, Clone)]
+pub struct RegexCmp {
+    inner: Regex,
+    value: String,
+}
+
+impl RegexCmp {
+    pub fn new<T: Into<String>>(value: T) -> Result<Self, regex::Error> {
+        let value = value.into();
+
+        Ok(RegexCmp {
+            inner: regex::Regex::new(value.as_str())?,
+            value,
+        })
+    }
+}
+
+impl Deref for RegexCmp {
+    type Target = Regex;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl PartialEq for RegexCmp {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum Token {
@@ -17,7 +51,7 @@ pub enum Token {
     Identifier(String),
     String(String),
     Number(f64),
-    Regex(Regex),
+    Regex(RegexCmp),
     Date(NaiveDateTime),
     DESC,
     ASC,
@@ -41,7 +75,7 @@ impl Display for Token {
             Token::Identifier(s) => write!(f, "{}", s),
             Token::String(s) => write!(f, "{}", s),
             Token::Number(s) => write!(f, "{}", s),
-            Token::Regex(s) => write!(f, "{}", s),
+            Token::Regex(s) => write!(f, "{}", s.value),
             Token::Date(s) => write!(f, "{}", s),
             Token::DESC => write!(f, "DESC"),
             Token::ASC => write!(f, "ASC"),
@@ -106,10 +140,10 @@ impl Display for ParseError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Query {
     Expr(Option<Box<Query>>, Option<Box<Query>>),
-    Regex(Regex),
+    Regex(RegexCmp),
     And(Box<Query>, Box<Query>),
     Or(Box<Query>, Box<Query>),
 
@@ -122,7 +156,7 @@ pub enum Query {
 }
 
 impl Query {
-    pub fn accept(&self, log_data: &LogString) -> bool {
+    pub fn accept<'a>(&self, log_data: &FieldMap<'a>) -> bool {
         match self {
             Query::Expr(where_expr, _) => {
                 if let Some(where_expr) = where_expr {
@@ -133,21 +167,21 @@ impl Query {
                 true
             }
             Query::Regex(regex) => {
-                if let Value::String(s) = &log_data.event {
-                    if regex.is_match(&s) {
-                        return true
-                    }
-                }
+                // if let Value::String(s) = fields.get("event").unwrap() {
+                //     if regex.is_match(&s) {
+                //         return true
+                //     }
+                // }
+                //
+                // if let Value::String(s) = fields.get("process").unwrap() {
+                //     if regex.is_match(&s) {
+                //         return true
+                //     }
+                // }
 
-                if let Value::String(s) = &log_data.process {
-                    if regex.is_match(&s) {
-                        return true
-                    }
-                }
-
-                for (_, field) in log_data.fields.iter() {
+                for (_, field) in log_data.iter() {
                     if let Value::String(s) = field {
-                        if regex.is_match(s) {
+                        if regex.is_match(s.as_ref()) {
                             return true;
                         }
                     }
@@ -155,112 +189,107 @@ impl Query {
 
                 false
             }
-            Query::And(left, right) => {
-                left.accept(log_data) && right.accept(log_data)
-            }
-            Query::Or(left, right) => {
-                left.accept(log_data) || right.accept(log_data)
-            }
-            Query::Equal(left, right) => {
-                match (left, right) {
-                    (Token::Identifier(left), Token::String(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x == right)).unwrap_or(false)
-                    }
-                    (Token::Identifier(left), Token::Number(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x == right)).unwrap_or(false)
-                    }
-                    (Token::Identifier(left), Token::Regex(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| right.is_match(x.to_string().as_str()))).unwrap_or(false)
-                    }
-                    (Token::Identifier(left), Token::Date(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x == right)).unwrap_or(false)
-                    }
-                    _ => {
-                        false
-                    }
-                }
-            }
-            Query::GE(left, right) => {
-                match (left, right) {
-                    (Token::Identifier(left), Token::String(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x >= right)).unwrap_or(false)
-                    }
-                    (Token::Identifier(left), Token::Number(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x >= right)).unwrap_or(false)
-                    }
-                    (Token::Identifier(left), Token::Date(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x >= right)).unwrap_or(false)
-                    }
-                    _ => {
-                        false
-                    }
-                }
-            }
-            Query::LE(left, right) => {
-                match (left, right) {
-                    (Token::Identifier(left), Token::String(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x <= right)).unwrap_or(false)
-                    }
-                    (Token::Identifier(left), Token::Number(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x <= right)).unwrap_or(false)
-                    }
-                    (Token::Identifier(left), Token::Date(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x <= right)).unwrap_or(false)
-                    }
-                    _ => {
-                        false
-                    }
-                }
-            }
-            Query::Greater(left, right) => {
-                match (left, right) {
-                    (Token::Identifier(left), Token::String(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x > right)).unwrap_or(false)
-                    }
-                    (Token::Identifier(left), Token::Number(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x > right)).unwrap_or(false)
-                    }
-                    (Token::Identifier(left), Token::Date(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x > right)).unwrap_or(false)
-                    }
-                    _ => {
-                        false
-                    }
-                }
-            }
-            Query::Less(left, right) => {
-                match (left, right) {
-                    (Token::Identifier(left), Token::String(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x < right)).unwrap_or(false)
-                    }
-                    (Token::Identifier(left), Token::Number(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x < right)).unwrap_or(false)
-                    }
-                    (Token::Identifier(left), Token::Date(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x < right)).unwrap_or(false)
-                    }
-                    _ => {
-                        false
-                    }
-                }
-            }
-            Query::NE(left, right) => {
-                match (left, right) {
-                    (Token::Identifier(left), Token::String(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x != right)).unwrap_or(false)
-                    }
-                    (Token::Identifier(left), Token::Number(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x != right)).unwrap_or(false)
-                    }
-                    (Token::Identifier(left), Token::Date(right)) => {
-                        log_data.get(left).map(|x| x.iter().any(|x| x != right)).unwrap_or(false)
-                    }
-                    _ => {
-                        false
-                    }
-                }
-            }
+            Query::And(left, right) => left.accept(log_data) && right.accept(log_data),
+            Query::Or(left, right) => left.accept(log_data) || right.accept(log_data),
+            Query::Equal(left, right) => match (left, right) {
+                (Token::Identifier(left), Token::String(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x == right))
+                    .unwrap_or(false),
+                (Token::Identifier(left), Token::Number(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x == right))
+                    .unwrap_or(false),
+                (Token::Identifier(left), Token::Regex(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| right.is_match(x.to_string().as_str())))
+                    .unwrap_or(false),
+                (Token::Identifier(left), Token::Date(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x == right))
+                    .unwrap_or(false),
+                _ => false,
+            },
+            Query::GE(left, right) => match (left, right) {
+                (Token::Identifier(left), Token::String(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x >= right))
+                    .unwrap_or(false),
+                (Token::Identifier(left), Token::Number(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x >= right))
+                    .unwrap_or(false),
+                (Token::Identifier(left), Token::Date(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x >= right))
+                    .unwrap_or(false),
+                _ => false,
+            },
+            Query::LE(left, right) => match (left, right) {
+                (Token::Identifier(left), Token::String(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x <= right))
+                    .unwrap_or(false),
+                (Token::Identifier(left), Token::Number(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x <= right))
+                    .unwrap_or(false),
+                (Token::Identifier(left), Token::Date(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x <= right))
+                    .unwrap_or(false),
+                _ => false,
+            },
+            Query::Greater(left, right) => match (left, right) {
+                (Token::Identifier(left), Token::String(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x > right))
+                    .unwrap_or(false),
+                (Token::Identifier(left), Token::Number(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x > right))
+                    .unwrap_or(false),
+                (Token::Identifier(left), Token::Date(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x > right))
+                    .unwrap_or(false),
+                _ => false,
+            },
+            Query::Less(left, right) => match (left, right) {
+                (Token::Identifier(left), Token::String(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x < right))
+                    .unwrap_or(false),
+                (Token::Identifier(left), Token::Number(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x < right))
+                    .unwrap_or(false),
+                (Token::Identifier(left), Token::Date(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x < right))
+                    .unwrap_or(false),
+                _ => false,
+            },
+            Query::NE(left, right) => match (left, right) {
+                (Token::Identifier(left), Token::String(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x != right))
+                    .unwrap_or(false),
+                (Token::Identifier(left), Token::Number(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x != right))
+                    .unwrap_or(false),
+                (Token::Identifier(left), Token::Date(right)) => log_data
+                    .get(left)
+                    .map(|x| x.iter().any(|x| x != right))
+                    .unwrap_or(false),
+                _ => false,
+            },
         }
+    }
+
+    pub fn is_regex(&self) -> bool {
+        matches!(self, Query::Regex(_))
     }
 }
 
@@ -275,7 +304,10 @@ impl Compiler {
         }
     }
 
-    fn parse_numeric<T: Iterator<Item = char>>(&self, iter: &mut Peekable<T>) -> Result<f64, ParseError> {
+    fn parse_numeric<T: Iterator<Item = char>>(
+        &self,
+        iter: &mut Peekable<T>,
+    ) -> Result<f64, ParseError> {
         let mut tmp = String::new();
         while iter.peek().is_some() && iter.peek().unwrap().is_numeric() {
             tmp.push(iter.next().unwrap());
@@ -296,33 +328,23 @@ impl Compiler {
                     let mut str_iter = tmp.chars().skip(4).peekable();
                     let offset = self.parse_numeric(&mut str_iter)?;
                     match str_iter.next() {
-                        Some('s') => {
-                            Ok(Token::Date(self.now - Duration::seconds(offset as i64)))
-                        }
-                        Some('m') => {
-                            Ok(Token::Date(self.now - Duration::minutes(offset as i64)))
-                        }
-                        Some('h') => {
-                            Ok(Token::Date(self.now - Duration::hours(offset as i64)))
-                        }
-                        Some('d') => {
-                            Ok(Token::Date(self.now - Duration::days(offset as i64)))
-                        }
-                        Some('w') => {
-                            Ok(Token::Date(self.now - Duration::weeks(offset as i64)))
-                        }
-                        Some(c) => {
-                            return Err(ParseError::UnexpectedChar(c))
-                        }
+                        Some('s') => Ok(Token::Date(self.now - Duration::seconds(offset as i64))),
+                        Some('m') => Ok(Token::Date(self.now - Duration::minutes(offset as i64))),
+                        Some('h') => Ok(Token::Date(self.now - Duration::hours(offset as i64))),
+                        Some('d') => Ok(Token::Date(self.now - Duration::days(offset as i64))),
+                        Some('w') => Ok(Token::Date(self.now - Duration::weeks(offset as i64))),
+                        Some(c) => return Err(ParseError::UnexpectedChar(c)),
                         _ => return Err(ParseError::UnexpectedEndOfInput),
                     }
-                },
+                }
                 Some(_) => return Err(ParseError::InvalidDate),
                 None => Ok(Token::Date(self.now)),
             }
-        }
-        else {
-            Ok(Token::Date(NaiveDateTime::parse_from_str(&tmp, "%Y-%m-%d %H:%M:%S")?))
+        } else {
+            Ok(Token::Date(NaiveDateTime::parse_from_str(
+                &tmp,
+                "%Y-%m-%d %H:%M:%S%.9f",
+            )?))
         }
     }
 
@@ -332,15 +354,17 @@ impl Compiler {
         loop {
             match iter.peek() {
                 Some(&c) => match c {
-                    'a'..='z'|'A'..='Z' => {
+                    'a'..='z' | 'A'..='Z' => {
                         let mut tmp = String::new();
                         while let Some(&peek) = iter.peek() {
                             match peek {
-                                'a'..='z'|'A'..='Z'|'0'..='9'|'_'|':' if !tmp.is_empty() => {
+                                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | ':'
+                                    if !tmp.is_empty() =>
+                                {
                                     tmp.push(peek);
                                     iter.next();
                                 }
-                                'a'..='z'|'A'..='Z'|'_' => {
+                                'a'..='z' | 'A'..='Z' | '_' => {
                                     tmp.push(peek);
                                     iter.next();
                                 }
@@ -354,13 +378,13 @@ impl Compiler {
                             "OR" => tokens.push(Token::OR),
                             "DESC" => tokens.push(Token::DESC),
                             "ASC" => tokens.push(Token::ASC),
-                            _ => tokens.push(Token::Identifier(tmp))
+                            _ => tokens.push(Token::Identifier(tmp)),
                         }
-                    },
+                    }
                     '0'..='9' => {
                         tokens.push(Token::Number(self.parse_numeric(&mut iter)?));
                         iter.next();
-                    },
+                    }
                     '"' => {
                         let mut tmp = String::new();
                         iter.next();
@@ -369,92 +393,99 @@ impl Compiler {
                         }
                         iter.next();
                         tokens.push(Token::String(tmp));
-                    },
+                    }
                     '\'' => {
                         tokens.push(self.parse_date(&mut iter)?);
-                    },
-                    '/' => { //regex
+                    }
+                    '/' => {
+                        //regex
                         let mut tmp = String::new();
                         iter.next();
                         while iter.peek().is_some() && iter.peek().unwrap().ne(&'/') {
                             tmp.push(iter.next().unwrap());
                         }
                         iter.next();
-                        tokens.push(Token::Regex(Regex::new(&tmp)?));
-                    },
+                        tokens.push(Token::Regex(RegexCmp::new(&tmp)?));
+                    }
                     '(' => {
                         tokens.push(Token::OpenBrace);
                         iter.next();
-                    },
+                    }
                     ')' => {
                         tokens.push(Token::CloseBrace);
                         iter.next();
-                    },
+                    }
                     '=' => {
                         tokens.push(Token::Equal);
                         iter.next();
-                    },
+                    }
                     '>' => {
                         iter.next();
                         match iter.peek() {
                             Some(&'=') => {
                                 iter.next();
                                 tokens.push(Token::GE)
-                            },
-                            _ => tokens.push(Token::Greater)
+                            }
+                            _ => tokens.push(Token::Greater),
                         }
-                    },
+                    }
                     '<' => {
                         iter.next();
                         match iter.peek() {
                             Some(&'=') => {
                                 iter.next();
                                 tokens.push(Token::LE)
-                            },
-                            _ => tokens.push(Token::Less)
+                            }
+                            _ => tokens.push(Token::Less),
                         }
-                    },
+                    }
                     '!' => {
                         iter.next();
                         match iter.peek() {
                             Some(&'=') => {
                                 iter.next();
                                 tokens.push(Token::NE)
-                            },
+                            }
                             Some(&c) => return Err(ParseError::UnexpectedChar(c)),
-                            _ => return Err(ParseError::UnexpectedEndOfInput)
+                            _ => return Err(ParseError::UnexpectedEndOfInput),
                         }
                     }
-                    ' ' => { iter.next(); }
-                    c => return Err(ParseError::UnexpectedChar(c))
+                    ' ' => {
+                        iter.next();
+                    }
+                    c => return Err(ParseError::UnexpectedChar(c)),
                 },
-                None => break
+                None => break,
             }
         }
 
         Ok(tokens)
     }
 
-    fn compile_value(&self, iter: &mut Peekable<Iter<Token>>, allow_reg: bool) -> Result<Token, ParseError> {
+    fn compile_value(
+        &self,
+        iter: &mut Peekable<Iter<Token>>,
+        allow_reg: bool,
+    ) -> Result<Token, ParseError> {
         match iter.peek() {
             Some(Token::String(value)) => {
                 iter.next();
                 Ok(Token::String(value.clone()))
-            },
+            }
             Some(Token::Number(value)) => {
                 iter.next();
                 Ok(Token::Number(value.clone()))
-            },
+            }
             Some(Token::Regex(value)) if allow_reg => {
                 iter.next();
                 Ok(Token::Regex(value.clone()))
-            },
+            }
             Some(Token::Date(value)) => {
                 iter.next();
                 Ok(Token::Date(value.clone()))
-            },
+            }
             Some(&t) => Err(ParseError::UnexpectedToken(t.clone())),
-            None => Err(ParseError::UnexpectedEndOfInput)
+            None => Err(ParseError::UnexpectedEndOfInput),
         }
     }
 
@@ -465,7 +496,7 @@ impl Compiler {
                 let expr = self.compile_expression(iter);
                 iter.next();
                 expr
-            },
+            }
             Some(Token::Identifier(ident)) => {
                 let left = Token::Identifier(ident.clone());
                 iter.next();
@@ -495,11 +526,11 @@ impl Compiler {
                         Ok(Query::NE(left, self.compile_value(iter, false)?))
                     }
                     Some(&t) => Err(ParseError::UnexpectedToken(t.clone())),
-                    _ => Err(ParseError::UnexpectedEndOfInput)
+                    _ => Err(ParseError::UnexpectedEndOfInput),
                 }
-            },
+            }
             Some(&t) => Err(ParseError::UnexpectedToken(t.clone())),
-            None => Err(ParseError::UnexpectedEndOfInput)
+            None => Err(ParseError::UnexpectedEndOfInput),
         }
     }
 
@@ -535,11 +566,11 @@ impl Compiler {
                 Some(Token::Regex(regex)) => {
                     ast = Query::Regex(regex.clone());
                     if let Some(token) = iter.next() {
-                        return Err(ParseError::UnexpectedToken(token.clone()))
+                        return Err(ParseError::UnexpectedToken(token.clone()));
                     }
                 }
                 Some(other) => return Err(ParseError::UnexpectedToken(other.clone())),
-                None => return Err(ParseError::UnexpectedEndOfInput)
+                None => return Err(ParseError::UnexpectedEndOfInput),
             }
         }
 
@@ -550,7 +581,9 @@ impl Compiler {
 #[test]
 fn test_tokenizer() {
     let compiler = Compiler::new();
-    let tokens = compiler.tokenize("WHERE date > 'now' AND date < 'now-1d'").unwrap();
+    let tokens = compiler
+        .tokenize("WHERE date > 'now' AND date < 'now-1d'")
+        .unwrap();
     dbg!(tokens);
 }
 
@@ -564,6 +597,8 @@ fn compile_regex() {
 #[test]
 fn test_regex_tokenize() {
     let compiler = Compiler::new();
-    let tokens = compiler.tokenize("WHERE name = /John/ AND age > 20").unwrap();
+    let tokens = compiler
+        .tokenize("WHERE name = /John/ AND age > 20")
+        .unwrap();
     assert!(matches!(tokens[3], Token::Regex(_)));
 }
