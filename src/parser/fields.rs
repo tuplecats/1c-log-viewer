@@ -6,7 +6,7 @@ enum ParseState {
     StartLogLine,
     Duration,
     EventField,
-    Undefined,
+    Stack,
     Key,
     Value,
     Finish,
@@ -159,12 +159,13 @@ impl Fields {
                 }
                 ParseState::EventField => {
                     let value = self.read_until(b',')?;
-                    self.state.set(ParseState::Undefined);
+                    self.state.set(ParseState::Stack);
                     return Some((Cow::Borrowed("event"), value));
                 }
-                ParseState::Undefined => {
-                    let _ = self.read_until(b',')?;
+                ParseState::Stack => {
+                    let value = self.read_until(b',')?;
                     self.state.set(ParseState::Key);
+                    return Some((Cow::Borrowed("stack"), value));
                 }
                 ParseState::Key => {
                     key = self.read_until(b'=')?;

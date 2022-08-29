@@ -156,7 +156,7 @@ impl DataModel for LogCollection {
     }
 
     fn cols(&self) -> usize {
-        5
+        6
     }
 
     fn header_index(&self, name: &str) -> Option<usize> {
@@ -166,6 +166,7 @@ impl DataModel for LogCollection {
             "duration" => Some(2),
             "process" => Some(3),
             "OSThread" => Some(4),
+            "stack" => Some(5),
             _ => None,
         }
     }
@@ -177,6 +178,7 @@ impl DataModel for LogCollection {
             2 => Some(Cow::Borrowed("duration")),
             3 => Some(Cow::Borrowed("process")),
             4 => Some(Cow::Borrowed("OSThread")),
+            5 => Some(Cow::Borrowed("stack")),
             _ => None,
         }
     }
@@ -219,6 +221,13 @@ impl DataModel for LogCollection {
                     .get(line)
                     .unwrap()
                     .get("OSThread")
+                    .unwrap_or_default(),
+            ),
+            (Some(&line), 5) => Some(
+                this.lines
+                    .get(line)
+                    .unwrap()
+                    .get("stack")
                     .unwrap_or_default(),
             ),
             _ => None,

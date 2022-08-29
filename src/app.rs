@@ -43,11 +43,12 @@ impl App {
     pub fn new<T: Into<String>>(dir: T, date: Option<NaiveDateTime>) -> Self {
         let dir = dir.into();
         let widths = vec![
-            Constraint::Percentage(20),
-            Constraint::Percentage(20),
-            Constraint::Percentage(20),
-            Constraint::Percentage(20),
-            Constraint::Percentage(20),
+            Constraint::Percentage(30),
+            Constraint::Percentage(15),
+            Constraint::Percentage(15),
+            Constraint::Percentage(15),
+            Constraint::Percentage(10),
+            Constraint::Percentage(5),
         ];
 
         let log_data = Rc::new(RefCell::new(LogCollection::new(LogParser::parse(
