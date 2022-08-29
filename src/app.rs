@@ -127,8 +127,10 @@ impl App {
                 if text.trim().is_empty() {
                     search_borrowed.set_text(format!(r#"WHERE {} = {}"#, key, value));
                 }
-                else if Compiler::new().compile(text.trim()).is_ok() {
-                    search_borrowed.set_text(format!(r#"{} AND {} = {}"#, text, key, value));
+                else if let Ok(query) = Compiler::new().compile(text.trim()) {
+                    if !query.is_regex() {
+                        search_borrowed.set_text(format!(r#"{} AND {} = {}"#, text, key, value));
+                    }
                 }
             }
         });

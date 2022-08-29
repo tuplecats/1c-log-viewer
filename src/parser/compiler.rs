@@ -294,6 +294,10 @@ impl Query {
             }
         }
     }
+
+    pub fn is_regex(&self) -> bool {
+        matches!(self, Query::Regex(_))
+    }
 }
 
 pub struct Compiler {
