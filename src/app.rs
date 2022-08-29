@@ -225,8 +225,8 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints(vec![
             Constraint::Length(if app.search.borrow().visible() { 3 } else { 0 }),
-            Constraint::Percentage(60),
-            Constraint::Percentage(40),
+            Constraint::Percentage(55),
+            Constraint::Percentage(45),
         ])
         .split(rects[0]);
 
