@@ -209,6 +209,9 @@ impl From<Fields> for FieldMap<'static> {
     fn from(iter: Fields) -> Self {
         let mut map = FieldMap::new();
         while let Some((k, v)) = iter.parse_field() {
+            if k == "time" {
+                continue
+            }
             map.insert(k.to_string(), Value::from(v.to_string()))
         }
         map
