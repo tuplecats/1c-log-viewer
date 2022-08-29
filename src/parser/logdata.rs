@@ -6,10 +6,11 @@ use std::{
     borrow::Cow,
     sync::{Arc, mpsc::Receiver, RwLock},
 };
+
 use std::sync::mpsc::{Sender, TryRecvError};
 use std::sync::{Mutex, RwLockReadGuard, RwLockWriteGuard};
 use std::time::Duration;
-use crate::parser::{Compiler, Query};
+use crate::parser::{Compiler, FieldMap, Fields, Query};
 use crate::parser::compiler::ParseError;
 use crate::parser::value::Value;
 
@@ -28,7 +29,12 @@ impl Inner {
         };
 
         if let Some(filter) = &self.filter {
-            return filter.accept(&line.fields())
+            let mut map = FieldMap::new();
+            let iter = Fields::new(line.to_string());
+            while let Some((k, v)) = iter.parse_field() {
+                map.insert(k, Value::from(v))
+            }
+            return filter.accept(&map)
         }
 
         // Когда фильтр не указан, то строку принимаем всегда
@@ -98,6 +104,11 @@ impl LogCollection {
     }
 
     pub fn set_filter(&self, filter: String) -> Result<(), ParseError> {
+        if filter.trim().is_empty() {
+            self.inner_mut().notifier.lock().unwrap().send(None).unwrap();
+            return Ok(())
+        }
+
         match Compiler::new().compile(filter.as_str()) {
             Ok(filter) =>  {
                 self.inner_mut().notifier.lock().unwrap().send(Some(filter)).unwrap();
@@ -152,16 +163,16 @@ impl DataModel for LogCollection {
         }
     }
 
-    fn data(&self, index: ModelIndex) -> Option<Value> {
+    fn data(&self, index: ModelIndex) -> Option<Value<'static>> {
         let this = self.inner();
-        let line = this.mapping.get(index.row()).and_then(|i| this.lines.get(*i));
+        let line = this.mapping.get(index.row());
 
         match (line, index.column()) {
-            (Some(line), 0) => Some(line.get("time").unwrap_or_default()),
-            (Some(line), 1) => Some(line.get("event").unwrap_or_default()),
-            (Some(line), 2) => Some(line.get("duration").unwrap_or_default()),
-            (Some(line), 3) => Some(line.get("process").unwrap_or_default()),
-            (Some(line), 4) => Some(line.get("OSThread").unwrap_or_default()),
+            (Some(&line), 0) => Some(this.lines.get(line).unwrap().get("time").unwrap_or_default()),
+            (Some(&line), 1) => Some(this.lines.get(line).unwrap().get("event").unwrap_or_default()),
+            (Some(&line), 2) => Some(this.lines.get(line).unwrap().get("duration").unwrap_or_default()),
+            (Some(&line), 3) => Some(this.lines.get(line).unwrap().get("process").unwrap_or_default()),
+            (Some(&line), 4) => Some(this.lines.get(line).unwrap().get("OSThread").unwrap_or_default()),
             _ => None,
         }
     }

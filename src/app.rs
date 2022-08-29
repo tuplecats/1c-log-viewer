@@ -98,7 +98,7 @@ impl App {
             if let (Some(log_data), Some(text)) = (log_data.upgrade(), text.upgrade()) {
                 if let Some(index) = index {
                     if let Some(line) = log_data.borrow().line(index) {
-                        text.borrow_mut().set_data(line.fields());
+                        text.borrow_mut().set_data(line.fields().into());
                         return
                     }
                 }

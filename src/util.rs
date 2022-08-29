@@ -1,4 +1,5 @@
-use chrono::{Duration, Local, NaiveDateTime};
+use std::str::FromStr;
+use chrono::{Duration, Local, NaiveDateTime, NaiveTime, Timelike};
 use regex::Regex;
 
 pub fn parse_date(value: &str) -> Result<NaiveDateTime, regex::Error> {
@@ -35,6 +36,43 @@ pub fn parse_date(value: &str) -> Result<NaiveDateTime, regex::Error> {
             }
         },
         _ => Err(regex::Error::Syntax("Invalid value".to_string()))
+    }
+}
+
+pub fn parse_time(hour: NaiveDateTime, time: &str) -> NaiveDateTime {
+    let minutes_pos = time
+        .as_bytes()
+        .iter()
+        .position(|char| *char == b':')
+        .unwrap();
+    let seconds_pos = time
+        .as_bytes()
+        .iter()
+        .position(|char| *char == b'.')
+        .unwrap();
+
+    let minutes = match u32::from_str(&time[0..minutes_pos]) {
+        Ok(v) => v,
+        Err(_) => unreachable!()
+    };
+    let seconds = u32::from_str(&time[(minutes_pos + 1)..seconds_pos]).unwrap();
+    let nanos = &time[(seconds_pos + 1)..];
+    let nanos_count = nanos.chars().count();
+    let nanos = u32::from_str(nanos).unwrap();
+
+    match nanos_count {
+        0..=3 => NaiveDateTime::new(
+            hour.date(),
+            NaiveTime::from_hms_milli(hour.time().hour(), minutes, seconds, nanos),
+        ),
+        4..=6 => NaiveDateTime::new(
+            hour.date(),
+            NaiveTime::from_hms_micro(hour.time().hour(), minutes, seconds, nanos),
+        ),
+        _ => NaiveDateTime::new(
+            hour.date(),
+            NaiveTime::from_hms_nano(hour.time().hour(), minutes, seconds, nanos),
+        ),
     }
 }
 

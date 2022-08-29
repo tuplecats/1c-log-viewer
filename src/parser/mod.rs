@@ -1,37 +1,39 @@
 use std::{
     io,
     io::Read,
-    str::FromStr,
     sync::mpsc::{channel, Receiver, Sender},
 };
+use std::borrow::Cow;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, Seek, SeekFrom};
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use chrono::{NaiveDate, NaiveDateTime, Timelike};
 use indexmap::IndexMap;
 use walkdir::{DirEntry, WalkDir};
 
 mod compiler;
 mod value;
 pub mod logdata;
+mod fields;
 
 pub use value::*;
 pub use compiler::{Compiler, Query};
+pub use fields::*;
+use crate::util::parse_time;
 
 #[derive(Debug, Clone)]
-pub struct FieldMap {
-    values: IndexMap<String, Value>,
+pub struct FieldMap<'a> {
+    values: IndexMap<Cow<'a, str>, Value<'a>>,
 }
 
-impl FieldMap {
-    pub fn new() -> FieldMap {
+impl<'a> FieldMap<'a> {
+    pub fn new() -> FieldMap<'a> {
         FieldMap {
             values: IndexMap::with_capacity(16),
         }
     }
 
-    pub fn insert<T: Into<String>>(&mut self, key: T, value: Value) {
+    pub fn insert<T: Into<Cow<'a, str>>>(&mut self, key: T, value: Value<'a>) {
         let key = key.into();
 
         if let Some(inner) = self.values.get_mut(&key) {
@@ -47,19 +49,19 @@ impl FieldMap {
 
     pub fn iter(&self) -> impl Iterator<Item = (&str, &Value)> {
         self.values.iter()
-            .flat_map(|(a, b)| b.iter().map(|b| (a.as_str(), b)))
+            .flat_map(|(a, b)| b.iter().map(|b| (a.as_ref(), b)))
     }
 
     pub fn get(&self, name: impl AsRef<str>) -> Option<&Value> {
         self.values.get(name.as_ref())
     }
 
-    pub fn get_index(&self, index: usize) -> Option<(&String, &Value)> {
+    pub fn get_index(&self, index: usize) -> Option<(String, &Value)> {
         let mut inner_index = 0;
         for value in self.values.iter() {
             if inner_index + value.1.len() > index {
                 inner_index = index - inner_index;
-                return Some((value.0, &value.1[inner_index]))
+                return Some((value.0.to_string(), &value.1[inner_index]))
             }
 
             inner_index += value.1.len();
@@ -90,307 +92,41 @@ impl LogString {
         }
     }
 
+    #[inline]
     pub fn begin(&self) -> u64 {
         self.begin
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.size as usize
     }
 
-    pub fn fields(&self) -> FieldMap {
-        let mut lock = self.buf.lock().unwrap();
-        lock.seek(SeekFrom::Start(self.begin + 3)).unwrap();
-        let mut data = vec![0; self.size as usize];
-        lock.read_exact(&mut data).unwrap();
-
-        let mut iter = LineIter::new(
-            self.buf.clone(),
-            unsafe { String::from_utf8_unchecked(data) },
-            self.time,
-            false
-        );
-
-        match iter.next().unwrap() {
-            LogLine::Data(map) => map,
-            _ => unreachable!()
-        }
+    pub fn fields(&self) -> Fields {
+        Fields::new( self.to_string())
     }
 
-    pub fn get(&self, name: &str) -> Option<Value> {
+    pub fn get(&self, name: &str) -> Option<Value<'static>> {
         match name {
             "time" => Some(Value::DateTime(self.time)),
-            _ => self.fields().get(name).cloned()
-        }
-    }
-}
-
-enum ParseState {
-    StartLogLine,
-    EventField,
-    Duration,
-    Key,
-    Value,
-    Finish,
-}
-
-#[derive(PartialEq)]
-enum ParseValueState {
-    BeginParse,
-    ReadValueUntil(u8),
-    ReadValueToNext,
-    Finish,
-}
-
-#[derive(Debug, Clone)]
-enum LogLine {
-    Range(LogString),
-    Data(FieldMap)
-}
-
-impl LogLine {
-    pub fn get(&self, name: &str) -> Option<Value> {
-        match self {
-            LogLine::Range(l) => l.get(name),
-            LogLine::Data(l) => l.get(name).cloned(),
-        }
-    }
-}
-
-struct LineIter {
-    buffer: Arc<Mutex<BufReader<File>>>,
-    data: Rc<String>,
-    date: NaiveDateTime,
-    last_index: usize,
-    parse_range: bool,
-}
-
-impl LineIter {
-    fn new(buffer: Arc<Mutex<BufReader<File>>>, data: String, date: NaiveDateTime, parse_range: bool) -> Self {
-        LineIter {
-            buffer,
-            data: Rc::new(data),
-            date,
-            last_index: 0,
-            parse_range,
-        }
-    }
-
-    fn parse_line(&mut self) -> Option<LogLine> {
-        let mut state = ParseState::StartLogLine;
-        let begin = self.last_index;
-        let mut gtime = self.date;
-
-        let mut key = "";
-        let mut value = Value::default();
-        let mut log_string = FieldMap::new();
-
-        loop {
-            match state {
-                ParseState::StartLogLine => {
-                    let size = match self.data[self.last_index..].as_bytes().iter().position(|&byte| byte == b',') {
-                        Some(size) => size,
-                        None => break,
-                    };
-
-                    let time = &self.data[self.last_index..(self.last_index + size)];
-                    let minutes_pos = time
-                        .as_bytes()
-                        .iter()
-                        .position(|char| *char == b':')
-                        .unwrap();
-                    let seconds_pos = time
-                        .as_bytes()
-                        .iter()
-                        .position(|char| *char == b'.')
-                        .unwrap();
-                    let nanos_pos = time
-                        .as_bytes()
-                        .iter()
-                        .position(|char| *char == b'-')
-                        .unwrap();
-
-                    let minutes = match u32::from_str(&time[0..minutes_pos]) {
-                        Ok(v) => v,
-                        Err(_) => unreachable!()
-                    };
-                    let seconds = u32::from_str(&time[(minutes_pos + 1)..seconds_pos]).unwrap();
-                    let nanos = &time[(seconds_pos + 1)..nanos_pos];
-                    let nanos_count = nanos.chars().count();
-                    let nanos = u32::from_str(nanos).unwrap();
-
-                    gtime = match nanos_count {
-                        0..=3 => NaiveDateTime::new(
-                            self.date.date(),
-                            NaiveTime::from_hms_milli(self.date.time().hour(), minutes, seconds, nanos),
-                        ),
-                        4..=6 => NaiveDateTime::new(
-                            self.date.date(),
-                            NaiveTime::from_hms_micro(self.date.time().hour(), minutes, seconds, nanos),
-                        ),
-                        _ => NaiveDateTime::new(
-                            self.date.date(),
-                            NaiveTime::from_hms_nano(self.date.time().hour(), minutes, seconds, nanos),
-                        ),
-                    };
-
-                    if !self.parse_range {
-                        log_string.insert("time", Value::DateTime(gtime));
-                        log_string.insert("duration", Value::Number(time[(nanos_pos + 1)..].parse().unwrap()));
-                    }
-
-                    state = ParseState::EventField;
-                    self.last_index += size + 1;
-                }
-                ParseState::EventField => {
-                    let size = self.data[self.last_index..].as_bytes().iter().position(|&byte| byte == b',').unwrap();
-
-                    if !self.parse_range {
-                        log_string.insert("event", Value::new(self.data.clone(), self.last_index, size));
-                    }
-
-                    state = ParseState::Duration;
-                    self.last_index += size + 1;
-                }
-                ParseState::Duration => {
-                    let size = self.data[self.last_index..].as_bytes().iter().position(|&byte| byte == b',').unwrap();
-                    // log_string.fields.insert(
-                    //     "duration".to_string(),
-                    //     String::from(&data_str[last_index..end]),
-                    // );
-
-                    state = ParseState::Key;
-                    self.last_index += size + 1;
-                }
-                ParseState::Key => {
-                    let size = self.data[self.last_index..].as_bytes().iter().position(|&byte| byte == b'=').unwrap();
-
-                    if !self.parse_range {
-                        key = &self.data[self.last_index..(self.last_index + size)];
-                    }
-
-                    state = ParseState::Value;
-                    self.last_index += size + 1;
-                }
-                ParseState::Value => {
-                    let mut value_state = ParseValueState::BeginParse;
-                    loop {
-                        match value_state {
-                            ParseValueState::BeginParse => match self.data.as_bytes().get(self.last_index) {
-                                Some(&char)
-                                if char == b',' || char == b'\r' || char == b'\n' =>
-                                    {
-                                        value = Value::default();
-                                        value_state = ParseValueState::Finish;
-                                    }
-                                Some(&char) if char == b'\'' || char == b'"' => {
-                                    self.last_index += 1;
-                                    value_state = ParseValueState::ReadValueUntil(char);
-                                }
-                                Some(_) => {
-                                    value_state = ParseValueState::ReadValueToNext;
-                                }
-                                None => unreachable!(),
-                            },
-                            ParseValueState::ReadValueUntil(quote) => {
-                                let mut end = self.last_index;
-                                while let Some(&char) = self.data.as_bytes().get(end) {
-                                    match char {
-                                        b'\'' | b'"' => {
-                                            if self.data.as_bytes()[end + 1] == char {
-                                                // Экранированная кавычка (пропускаем)
-                                                end += 1;
-                                            } else if char == quote {
-                                                break;
-                                            }
-                                        }
-                                        _ => {}
-                                    }
-                                    end += 1;
-                                }
-
-                                if !self.parse_range {
-                                    value = Value::new(self.data.clone(), self.last_index, end - self.last_index);
-                                }
-
-                                self.last_index = end + 1;
-                                value_state = ParseValueState::Finish;
-                            }
-                            ParseValueState::ReadValueToNext => {
-                                let mut end = self.last_index;
-                                while let Some(&char) = self.data.as_bytes().get(end) {
-                                    match char {
-                                        b'\r' | b'\n' | b',' => {
-
-                                            if !self.parse_range {
-                                                value = Value::new(self.data.clone(), self.last_index, end - self.last_index);
-                                            }
-
-                                            self.last_index = end;
-                                            value_state = ParseValueState::Finish;
-                                            break;
-                                        }
-                                        _ => {}
-                                    }
-                                    end += 1;
-                                }
-                            }
-                            ParseValueState::Finish => {
-                                match self.data.as_bytes().get(self.last_index) {
-                                    Some(b'\r') => {
-                                        state = ParseState::Finish;
-                                        self.last_index += 2;
-
-                                        if !self.parse_range {
-                                            log_string.insert(key, value.clone());
-                                        }
-                                    }
-                                    Some(b'\n') => {
-                                        state = ParseState::Finish;
-                                        self.last_index += 1;
-
-                                        if !self.parse_range {
-                                            log_string.insert(key, value.clone());
-                                        }
-                                    }
-                                    Some(b',') => {
-                                        state = ParseState::Key;
-                                        self.last_index += 1;
-
-                                        if !self.parse_range {
-                                            log_string.insert(key, value.clone());
-                                        }
-                                    }
-                                    _ => unreachable!(),
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-                ParseState::Finish => {
-                    return match self.parse_range {
-                        true => Some(LogLine::Range(LogString::new(self.buffer.clone(), gtime, begin as u64, (self.last_index - begin) as u64))),
-                        false => Some(LogLine::Data(log_string))
-                    };
-                }
+            _ => {
+                let f = self.fields();
+                f.iter()
+                    .find(|(k, _)| k == name)
+                    .map(|(_, v)| Value::from(v.to_string()))
             }
         }
-
-        None
     }
 }
 
+impl ToString for LogString {
+    fn to_string(&self) -> String {
+        let mut lock = self.buf.lock().unwrap();
+        lock.seek(SeekFrom::Start(self.begin() + 3)).unwrap();
 
-impl Iterator for LineIter {
-    type Item = LogLine;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.last_index >= self.data.len() {
-            return None
-        }
-
-        self.parse_line()
+        let mut data = vec![0; self.len()];
+        lock.read_exact(&mut data).unwrap();
+        unsafe { String::from_utf8_unchecked(data) }
     }
 }
 
@@ -453,32 +189,54 @@ impl LogParser {
             });
 
         for part in parts {
-            let mut part = part.into_iter()
+            let rows = part.into_iter()
                 .map(|(entry, time)| {
                     let mut file = OpenOptions::new().read(true).open(entry.path()).unwrap();
-                    let mut data = String::new();
                     file.seek(SeekFrom::Start(3)).unwrap();
+                    let mut data = String::with_capacity(1024 * 30);
                     file.read_to_string(&mut data).unwrap();
-                    LineIter::new(Arc::new(Mutex::new(BufReader::new(file))), data, time, true)
+
+                    (Arc::new(Mutex::new(BufReader::new(file))), data, time)
+                })
+                .filter(|(_, data ,_)| !data.is_empty())
+                .collect::<Vec<_>>();
+
+            let mut part = rows.into_iter()
+                .map(|(buf, data, hour)| {
+                    (buf, Fields::new(data), hour)
                 })
                 .collect::<Vec<_>>();
 
             let mut lines = vec![None; part.len()];
             loop {
-                for (index, data) in part.iter_mut().enumerate() {
+                for (index, (buffer, data, hour)) in part.iter_mut().enumerate() {
                     if lines[index].is_some() {
                         continue
                     }
 
                     loop {
-                        match data.next() {
-                            Some(line) => match date {
-                                Some(date) if line.get("time").unwrap() < date => {},
-                                _ => {
-                                    lines[index] = Some(line);
-                                    break
+                        let begin = data.current() as u64;
+                        match data.parse_field() {
+                            Some((key, value)) if key == "time" => {
+                                let time = parse_time(*hour, &value);
+                                match date {
+                                    Some(date) if time < date => {}
+                                    _ => {
+                                        while let Some(_) = data.parse_field() {}
+                                        let end = data.current() as u64;
+
+                                        let line = LogString::new(
+                                            buffer.clone(),
+                                            time,
+                                            begin,
+                                            end - begin
+                                        );
+                                        lines[index] = Some(line);
+                                        break;
+                                    }
                                 }
                             },
+                            Some(_) => unreachable!(),
                             None => break
                         }
                     }
@@ -506,10 +264,7 @@ impl LogParser {
                 if let Some(min) = min {
                     let mut tmp = None;
                     std::mem::swap(&mut lines[min], &mut tmp);
-                    match tmp {
-                        Some(LogLine::Range(r)) => sender.send(r).unwrap(),
-                        _ => unreachable!()
-                    }
+                    sender.send(tmp.unwrap()).unwrap()
                 }
             }
         }

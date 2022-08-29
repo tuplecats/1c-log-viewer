@@ -34,7 +34,7 @@ impl Default for State {
 
 pub struct KeyValueView {
     state: State,
-    data: FieldMap,
+    data: FieldMap<'static>,
 
     focused: bool,
     visible: bool,
@@ -42,7 +42,7 @@ pub struct KeyValueView {
     width: u16,
     height: u16,
 
-    on_add_to_filter: Box<dyn FnMut((&String, &Value)) + 'static>,
+    on_add_to_filter: Box<dyn FnMut((String, &Value)) + 'static>,
 }
 
 impl KeyValueView {
@@ -108,7 +108,7 @@ impl KeyValueView {
         }
     }
 
-    pub fn set_data(&mut self, data: FieldMap) {
+    pub fn set_data(&mut self, data: FieldMap<'static>) {
         self.data = data;
 
         self.state.rows_size.clear();
@@ -122,7 +122,7 @@ impl KeyValueView {
         Renderer(&self)
     }
 
-    pub fn on_add_to_filter(&mut self, callback: impl FnMut((&String, &Value)) + 'static) {
+    pub fn on_add_to_filter(&mut self, callback: impl FnMut((String, &Value)) + 'static) {
         self.on_add_to_filter = Box::new(callback);
     }
     
