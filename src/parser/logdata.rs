@@ -4,15 +4,17 @@ use crate::{
 };
 use std::{
     borrow::Cow,
-    sync::{Arc, mpsc::Receiver, RwLock},
+    sync::{mpsc::Receiver, Arc, RwLock},
 };
 
-use std::sync::mpsc::{Sender, TryRecvError};
-use std::sync::{Mutex, RwLockReadGuard, RwLockWriteGuard};
-use std::time::Duration;
-use crate::parser::{Compiler, FieldMap, Fields, Query};
-use crate::parser::compiler::ParseError;
-use crate::parser::value::Value;
+use crate::parser::{compiler::ParseError, value::Value, Compiler, FieldMap, Fields, Query};
+use std::{
+    sync::{
+        mpsc::{Sender, TryRecvError},
+        Mutex, RwLockReadGuard, RwLockWriteGuard,
+    },
+    time::Duration,
+};
 
 struct Inner {
     lines: Vec<LogString>,
@@ -34,7 +36,7 @@ impl Inner {
             while let Some((k, v)) = iter.parse_field() {
                 map.insert(k, Value::from(v))
             }
-            return filter.accept(&map)
+            return filter.accept(&map);
         }
 
         // Когда фильтр не указан, то строку принимаем всегда
@@ -52,7 +54,6 @@ impl Clone for LogCollection {
 
 impl LogCollection {
     pub fn new(receiver: Receiver<LogString>) -> LogCollection {
-
         let (notifier, rx) = std::sync::mpsc::channel();
         let this = LogCollection(Arc::new(RwLock::new(Inner {
             lines: vec![],
@@ -78,10 +79,10 @@ impl LogCollection {
                         write.filter = filter;
                         write.mapping.clear();
                         row = 0;
-                    },
+                    }
                     Err(TryRecvError::Disconnected) => {
                         break;
-                    },
+                    }
                     _ => {}
                 }
 
@@ -105,26 +106,39 @@ impl LogCollection {
 
     pub fn set_filter(&self, filter: String) -> Result<(), ParseError> {
         if filter.trim().is_empty() {
-            self.inner_mut().notifier.lock().unwrap().send(None).unwrap();
-            return Ok(())
+            self.inner_mut()
+                .notifier
+                .lock()
+                .unwrap()
+                .send(None)
+                .unwrap();
+            return Ok(());
         }
 
         let current = self.inner().filter.clone();
         match Compiler::new().compile(filter.as_str()) {
             Ok(filter) => {
                 if current.is_none() || current.unwrap() != filter {
-                    self.inner_mut().notifier.lock().unwrap().send(Some(filter)).unwrap();
+                    self.inner_mut()
+                        .notifier
+                        .lock()
+                        .unwrap()
+                        .send(Some(filter))
+                        .unwrap();
                 }
 
                 Ok(())
-            },
-            Err(e) => Err(e)
+            }
+            Err(e) => Err(e),
         }
     }
 
     pub fn line(&self, row: usize) -> Option<LogString> {
         let this = self.inner();
-        this.mapping.get(row).and_then(|i| this.lines.get(*i)).cloned()
+        this.mapping
+            .get(row)
+            .and_then(|i| this.lines.get(*i))
+            .cloned()
     }
 
     fn inner(&self) -> RwLockReadGuard<'_, Inner> {
@@ -172,11 +186,41 @@ impl DataModel for LogCollection {
         let line = this.mapping.get(index.row());
 
         match (line, index.column()) {
-            (Some(&line), 0) => Some(this.lines.get(line).unwrap().get("time").unwrap_or_default()),
-            (Some(&line), 1) => Some(this.lines.get(line).unwrap().get("event").unwrap_or_default()),
-            (Some(&line), 2) => Some(this.lines.get(line).unwrap().get("duration").unwrap_or_default()),
-            (Some(&line), 3) => Some(this.lines.get(line).unwrap().get("process").unwrap_or_default()),
-            (Some(&line), 4) => Some(this.lines.get(line).unwrap().get("OSThread").unwrap_or_default()),
+            (Some(&line), 0) => Some(
+                this.lines
+                    .get(line)
+                    .unwrap()
+                    .get("time")
+                    .unwrap_or_default(),
+            ),
+            (Some(&line), 1) => Some(
+                this.lines
+                    .get(line)
+                    .unwrap()
+                    .get("event")
+                    .unwrap_or_default(),
+            ),
+            (Some(&line), 2) => Some(
+                this.lines
+                    .get(line)
+                    .unwrap()
+                    .get("duration")
+                    .unwrap_or_default(),
+            ),
+            (Some(&line), 3) => Some(
+                this.lines
+                    .get(line)
+                    .unwrap()
+                    .get("process")
+                    .unwrap_or_default(),
+            ),
+            (Some(&line), 4) => Some(
+                this.lines
+                    .get(line)
+                    .unwrap()
+                    .get("OSThread")
+                    .unwrap_or_default(),
+            ),
             _ => None,
         }
     }

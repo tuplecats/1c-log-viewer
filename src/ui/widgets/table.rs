@@ -1,15 +1,12 @@
-use std::cell::RefCell;
-use std::mem;
-use std::rc::Rc;
+use crate::ui::{index::ModelIndex, model::DataModel, widgets::WidgetExt};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::{cell::RefCell, mem, rc::Rc};
 use tui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Style},
+    style::{Color, Style},
     widgets::{Block, Borders, Widget},
 };
-use tui::style::Color;
-use crate::ui::{index::ModelIndex, model::{DataModel}, widgets::WidgetExt};
 
 #[derive(Default)]
 struct State {
@@ -39,7 +36,6 @@ pub struct TableViewStyle {
 }
 
 impl TableViewStyle {
-
     #[allow(dead_code)]
     pub fn common(mut self, style: Style) -> Self {
         self.common = style;
@@ -127,13 +123,12 @@ impl TableView {
         let row_count = self.height.saturating_sub(4) as usize;
 
         if row_count == 0 {
-            return
+            return;
         }
 
         if index > (self.state.begin + row_count) {
             self.state.begin = index - row_count;
-        }
-        else if index < self.state.begin {
+        } else if index < self.state.begin {
             self.state.begin = index;
         }
     }
@@ -149,7 +144,7 @@ impl TableView {
 
     fn next_inner(&mut self, current: Option<usize>, length: usize) -> Option<usize> {
         if length == 0 {
-            return None
+            return None;
         }
 
         Some(match current {
@@ -175,7 +170,7 @@ impl TableView {
 
     fn prev_inner(&mut self, current: Option<usize>, length: usize) -> Option<usize> {
         if length == 0 {
-            return None
+            return None;
         }
 
         Some(match current {
@@ -218,12 +213,16 @@ impl TableView {
         chunks.iter().step_by(2).map(|c| c.width).collect()
     }
 
-    pub fn on_selection_changed(&mut self, callback: impl FnMut(&mut Self, Option<usize>) + 'static) {
+    pub fn on_selection_changed(
+        &mut self,
+        callback: impl FnMut(&mut Self, Option<usize>) + 'static,
+    ) {
         self.on_selection_changed = Box::new(callback);
     }
 
     pub fn emit_selection_changed(&mut self) {
-        let mut on_selection_changed = mem::replace(&mut self.on_selection_changed, Box::new(|_, _| {}));
+        let mut on_selection_changed =
+            mem::replace(&mut self.on_selection_changed, Box::new(|_, _| {}));
         on_selection_changed(self, self.state.index);
         self.on_selection_changed = on_selection_changed;
     }
@@ -264,15 +263,31 @@ impl WidgetExt for TableView {
 
     fn key_press_event(&mut self, event: KeyEvent) {
         match event {
-            KeyEvent { code: KeyCode::Up, modifiers: KeyModifiers::NONE } => self.prev(),
-            KeyEvent { code: KeyCode::Down, modifiers: KeyModifiers::NONE } => self.next(),
-            KeyEvent { code: KeyCode::PageUp, modifiers: KeyModifiers::NONE } => {
+            KeyEvent {
+                code: KeyCode::Up,
+                modifiers: KeyModifiers::NONE,
+            } => self.prev(),
+            KeyEvent {
+                code: KeyCode::Down,
+                modifiers: KeyModifiers::NONE,
+            } => self.next(),
+            KeyEvent {
+                code: KeyCode::PageUp,
+                modifiers: KeyModifiers::NONE,
+            } => {
                 self.state.begin = 0;
                 self.state.index = if self.rows() > 0 { Some(0) } else { None };
                 self.emit_selection_changed();
             }
-            KeyEvent { code: KeyCode::PageDown, modifiers: KeyModifiers::NONE } => {
-                self.state.select(if self.rows() > 0 { Some(self.rows() - 1) } else { None });
+            KeyEvent {
+                code: KeyCode::PageDown,
+                modifiers: KeyModifiers::NONE,
+            } => {
+                self.state.select(if self.rows() > 0 {
+                    Some(self.rows() - 1)
+                } else {
+                    None
+                });
                 self.update_state();
                 self.emit_selection_changed();
             }
@@ -305,19 +320,20 @@ impl<'a> Widget for Renderer<'a> {
 
         let block_style = match self.0.focused() {
             true => Style::default().fg(Color::LightYellow),
-            false => Style::default()
+            false => Style::default(),
         };
 
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(block_style)
-            .title(
-                format!(
-                    "{}/{}",
-                    self.0.state.selected().map_or(0, |i| i + 1),
-                    self.0.model.as_ref().map_or(0, |model| model.borrow().rows())
-                )
-            );
+            .title(format!(
+                "{}/{}",
+                self.0.state.selected().map_or(0, |i| i + 1),
+                self.0
+                    .model
+                    .as_ref()
+                    .map_or(0, |model| model.borrow().rows())
+            ));
 
         let model = match self.0.model {
             Some(ref model) => model.borrow(),
@@ -352,7 +368,13 @@ impl<'a> Widget for Renderer<'a> {
         let mut col = table_area.left();
         for (&width, cell) in column_widths.iter().zip(0..data_columns) {
             let header_data = model.header_data(cell).unwrap_or_default();
-            buf.set_stringn(col, table_area.top(), header_data, width as usize, Style::default());
+            buf.set_stringn(
+                col,
+                table_area.top(),
+                header_data,
+                width as usize,
+                Style::default(),
+            );
             col += width + 1;
         }
 
@@ -361,7 +383,10 @@ impl<'a> Widget for Renderer<'a> {
             return;
         }
 
-        let (start, end) = (self.0.state.begin, self.0.state.begin + rows_height as usize);
+        let (start, end) = (
+            self.0.state.begin,
+            self.0.state.begin + rows_height as usize,
+        );
         //self.0.state.offset = start;
 
         for index in (0..data_rows).skip(self.0.state.begin).take(end - start) {

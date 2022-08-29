@@ -1,7 +1,5 @@
-
-use std::cell::Cell;
-use std::borrow::Cow;
 use crate::parser::{FieldMap, Value};
+use std::{borrow::Cow, cell::Cell};
 
 #[derive(Clone, Copy)]
 enum ParseState {
@@ -55,21 +53,21 @@ impl Fields {
         let size = size.saturating_sub(1);
         match size {
             0 => None,
-            _ => Some(&self.reader[begin..(begin + size)])
+            _ => Some(&self.reader[begin..(begin + size)]),
         }
     }
 
     fn read_byte(&self) -> Option<u8> {
         if self.index.get() == self.reader.len() {
-            return None
+            return None;
         }
 
-        self.index.set(self.index.get().saturating_add(1).min(self.reader.len()));
+        self.index
+            .set(self.index.get().saturating_add(1).min(self.reader.len()));
         Some(self.reader.as_bytes()[self.index.get() - 1])
     }
 
     fn read_value(&self) -> Option<&str> {
-
         let mut value = "";
         let mut value_state = ParseValueState::BeginParse;
 
@@ -96,16 +94,14 @@ impl Fields {
                                 let end = self.current().saturating_sub(1);
                                 let read = self.read_byte();
                                 match read {
-                                    Some(byte) if char == byte => {
-                                        continue
-                                    },
+                                    Some(byte) if char == byte => continue,
                                     _ => {}
                                 };
 
                                 value = &self.reader[begin..end];
                                 value_state = ParseValueState::Finish(read.unwrap());
                                 break;
-                            },
+                            }
                             _ => {}
                         }
                     }
@@ -180,7 +176,7 @@ impl Fields {
                 }
                 ParseState::Finish => {
                     self.state.set(ParseState::StartLogLine);
-                    break
+                    break;
                 }
             }
         }
@@ -194,7 +190,7 @@ impl Fields {
 }
 
 pub struct Iter<'a> {
-    inner: &'a Fields
+    inner: &'a Fields,
 }
 
 impl<'a> Iterator for Iter<'a> {
@@ -210,7 +206,7 @@ impl From<Fields> for FieldMap<'static> {
         let mut map = FieldMap::new();
         while let Some((k, v)) = iter.parse_field() {
             if k == "time" {
-                continue
+                continue;
             }
             map.insert(k.to_string(), Value::from(v.to_string()))
         }

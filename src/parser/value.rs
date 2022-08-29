@@ -1,7 +1,5 @@
-use std::borrow::Cow;
-use std::fmt::Display;
-use std::ops::Index;
 use chrono::NaiveDateTime;
+use std::{borrow::Cow, fmt::Display, ops::Index};
 
 #[derive(Debug, Clone)]
 pub enum Value<'a> {
@@ -48,8 +46,7 @@ impl<'a> From<&'a str> for Value<'a> {
     fn from(string: &'a str) -> Self {
         if let Ok(value) = string.parse::<f64>() {
             Self::Number(value)
-        }
-        else {
+        } else {
             Self::String(Cow::from(string))
         }
     }
@@ -59,13 +56,11 @@ impl<'a> From<String> for Value<'a> {
     fn from(string: String) -> Self {
         if let Ok(value) = string.as_str().parse::<f64>() {
             Self::Number(value)
-        }
-        else {
+        } else {
             Self::String(Cow::from(string))
         }
     }
 }
-
 
 impl<'a> Display for Value<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

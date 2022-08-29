@@ -1,8 +1,6 @@
-use crate::ui::index::ModelIndex;
-use std::{any::Any, borrow::Cow};
-use std::fmt::Display;
+use crate::{parser::Value, ui::index::ModelIndex};
+use std::{any::Any, borrow::Cow, fmt::Display};
 use tui::text::Text;
-use crate::parser::Value;
 
 #[derive(Default)]
 pub struct Column<'a> {
@@ -43,8 +41,6 @@ impl<T: Display> DataModel for Vec<T> {
     }
 
     fn data(&self, index: ModelIndex) -> Option<Value<'static>> {
-        self.get(index.row()).map(|s| {
-            Value::from(s.to_string())
-        })
+        self.get(index.row()).map(|s| Value::from(s.to_string()))
     }
 }

@@ -1,25 +1,25 @@
-use std::{
-    io,
-    io::Read,
-    sync::mpsc::{channel, Receiver, Sender},
-};
-use std::borrow::Cow;
-use std::fs::{File, OpenOptions};
-use std::io::{BufReader, Seek, SeekFrom};
-use std::sync::{Arc, Mutex};
+use crate::util::parse_time;
 use chrono::{NaiveDate, NaiveDateTime, Timelike};
+pub use compiler::{Compiler, Query};
+pub use fields::*;
 use indexmap::IndexMap;
+use std::{
+    borrow::Cow,
+    fs::{File, OpenOptions},
+    io,
+    io::{BufReader, Read, Seek, SeekFrom},
+    sync::{
+        mpsc::{channel, Receiver, Sender},
+        Arc, Mutex,
+    },
+};
+pub use value::*;
 use walkdir::{DirEntry, WalkDir};
 
 mod compiler;
-mod value;
-pub mod logdata;
 mod fields;
-
-pub use value::*;
-pub use compiler::{Compiler, Query};
-pub use fields::*;
-use crate::util::parse_time;
+pub mod logdata;
+mod value;
 
 #[derive(Debug, Clone)]
 pub struct FieldMap<'a> {
@@ -39,16 +39,16 @@ impl<'a> FieldMap<'a> {
         if let Some(inner) = self.values.get_mut(&key) {
             match inner {
                 Value::MultiValue(arr) => arr.push(value),
-                _ => *inner = Value::MultiValue(vec![inner.clone(), value])
+                _ => *inner = Value::MultiValue(vec![inner.clone(), value]),
             }
-        }
-        else {
+        } else {
             self.values.insert(key, value);
         }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&str, &Value)> {
-        self.values.iter()
+        self.values
+            .iter()
             .flat_map(|(a, b)| b.iter().map(|b| (a.as_ref(), b)))
     }
 
@@ -61,7 +61,7 @@ impl<'a> FieldMap<'a> {
         for value in self.values.iter() {
             if inner_index + value.1.len() > index {
                 inner_index = index - inner_index;
-                return Some((value.0.to_string(), &value.1[inner_index]))
+                return Some((value.0.to_string(), &value.1[inner_index]));
             }
 
             inner_index += value.1.len();
@@ -83,7 +83,12 @@ pub struct LogString {
 }
 
 impl LogString {
-    pub fn new(buf: Arc<Mutex<BufReader<File>>>, time: NaiveDateTime, begin: u64, size: u64) -> Self  {
+    pub fn new(
+        buf: Arc<Mutex<BufReader<File>>>,
+        time: NaiveDateTime,
+        begin: u64,
+        size: u64,
+    ) -> Self {
         Self {
             buf,
             time,
@@ -103,7 +108,7 @@ impl LogString {
     }
 
     pub fn fields(&self) -> Fields {
-        Fields::new( self.to_string())
+        Fields::new(self.to_string())
     }
 
     pub fn get(&self, name: &str) -> Option<Value<'static>> {
@@ -140,7 +145,11 @@ impl LogParser {
     }
 
     // А может сделать итератор, который парсит
-    fn parse_dir(path: String, date: Option<NaiveDateTime>, sender: Sender<LogString>) -> io::Result<()> {
+    fn parse_dir(
+        path: String,
+        date: Option<NaiveDateTime>,
+        sender: Sender<LogString>,
+    ) -> io::Result<()> {
         let walk = WalkDir::new(path)
             .follow_links(true)
             .into_iter()
@@ -163,7 +172,7 @@ impl LogParser {
                     let date_time = NaiveDate::from_ymd(year, month, day).and_hms(hour, 0, 0);
                     match hour_date {
                         Some(hour_date) if date_time < hour_date => None,
-                        _ =>  Some((e, date_time))
+                        _ => Some((e, date_time)),
                     }
                 } else {
                     None
@@ -171,25 +180,27 @@ impl LogParser {
             })
             .collect::<Vec<_>>();
 
-        files.sort_by(|(_, name), (_, name2)| {
-            name.cmp(name2)
-        });
+        files.sort_by(|(_, name), (_, name2)| name.cmp(name2));
 
-        let parts = files.into_iter()
-            .fold(Vec::<Vec<(DirEntry, NaiveDateTime)>>::new(), |mut acc, (entry, time)| {
+        let parts = files.into_iter().fold(
+            Vec::<Vec<(DirEntry, NaiveDateTime)>>::new(),
+            |mut acc, (entry, time)| {
                 if acc.is_empty() {
                     acc.push(vec![]);
-                }
-                else if acc.last().unwrap().is_empty() || acc.last().unwrap().last().unwrap().1 != time {
+                } else if acc.last().unwrap().is_empty()
+                    || acc.last().unwrap().last().unwrap().1 != time
+                {
                     acc.push(vec![]);
                 }
 
                 acc.last_mut().unwrap().push((entry, time));
                 acc
-            });
+            },
+        );
 
         for part in parts {
-            let rows = part.into_iter()
+            let rows = part
+                .into_iter()
                 .map(|(entry, time)| {
                     let mut file = OpenOptions::new().read(true).open(entry.path()).unwrap();
                     file.seek(SeekFrom::Start(3)).unwrap();
@@ -198,20 +209,19 @@ impl LogParser {
 
                     (Arc::new(Mutex::new(BufReader::new(file))), data, time)
                 })
-                .filter(|(_, data ,_)| !data.is_empty())
+                .filter(|(_, data, _)| !data.is_empty())
                 .collect::<Vec<_>>();
 
-            let mut part = rows.into_iter()
-                .map(|(buf, data, hour)| {
-                    (buf, Fields::new(data), hour)
-                })
+            let mut part = rows
+                .into_iter()
+                .map(|(buf, data, hour)| (buf, Fields::new(data), hour))
                 .collect::<Vec<_>>();
 
             let mut lines = vec![None; part.len()];
             loop {
                 for (index, (buffer, data, hour)) in part.iter_mut().enumerate() {
                     if lines[index].is_some() {
-                        continue
+                        continue;
                     }
 
                     loop {
@@ -229,36 +239,40 @@ impl LogParser {
                                             buffer.clone(),
                                             time,
                                             begin,
-                                            end - begin
+                                            end - begin,
                                         );
                                         lines[index] = Some(line);
                                         break;
                                     }
                                 }
-                            },
+                            }
                             Some(_) => unreachable!(),
-                            None => break
+                            None => break,
                         }
                     }
                 }
 
-                let min = lines.iter()
+                let min = lines
+                    .iter()
                     .enumerate()
                     .filter_map(|(index, value)| {
                         if let Some(value) = value.as_ref() {
                             Some((index, value))
-                        }
-                        else {
+                        } else {
                             None
                         }
                     })
                     .min_by(|(_, value1), (_, value2)| {
-                        value1.get("time").unwrap().partial_cmp(&value2.get("time").unwrap()).unwrap()
+                        value1
+                            .get("time")
+                            .unwrap()
+                            .partial_cmp(&value2.get("time").unwrap())
+                            .unwrap()
                     })
                     .map(|(index, _)| index);
 
                 if lines.iter().all(Option::is_none) {
-                    break
+                    break;
                 }
 
                 if let Some(min) = min {

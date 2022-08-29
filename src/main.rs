@@ -7,7 +7,6 @@ mod util;
 /// 1. Добить запрос с разными типами
 /// 2. Индексация по полям
 /// 3. Читать файлы и запоминать только байты конкретных данных
-
 use crate::parser::LogParser;
 use app::App;
 use clap::Parser;
@@ -19,10 +18,8 @@ use crossterm::{
 use std::error::Error;
 use tui::{backend::CrosstermBackend, Terminal};
 
-
-use parser::logdata::LogCollection;
 use crate::util::parse_date;
-
+use parser::logdata::LogCollection;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None, verbatim_doc_comment)]
