@@ -1,21 +1,22 @@
-use crate::util::parse_time;
+use crate::{
+    parser::buffers::{add_buffer, get_buffer},
+    util::parse_time,
+};
 use chrono::{NaiveDate, NaiveDateTime, Timelike};
 pub use compiler::{Compiler, Query};
 pub use fields::*;
 use indexmap::IndexMap;
 use std::{
     borrow::Cow,
-    fs::{File, OpenOptions},
+    fs::OpenOptions,
     io,
     io::{BufReader, Read, Seek, SeekFrom},
-    sync::{
-        mpsc::{channel, Receiver, Sender},
-        Arc, Mutex,
-    },
+    sync::mpsc::{channel, Receiver, Sender},
 };
 pub use value::*;
 use walkdir::{DirEntry, WalkDir};
 
+mod buffers;
 mod compiler;
 mod fields;
 pub mod logdata;
@@ -76,21 +77,16 @@ impl<'a> FieldMap<'a> {
 
 #[derive(Debug, Clone)]
 pub struct LogString {
-    buf: Arc<Mutex<BufReader<File>>>,
+    buffer: usize,
     time: NaiveDateTime,
     begin: u64,
     size: u64,
 }
 
 impl LogString {
-    pub fn new(
-        buf: Arc<Mutex<BufReader<File>>>,
-        time: NaiveDateTime,
-        begin: u64,
-        size: u64,
-    ) -> Self {
+    pub fn new(buffer: usize, time: NaiveDateTime, begin: u64, size: u64) -> Self {
         Self {
-            buf,
+            buffer,
             time,
             begin,
             size,
@@ -126,7 +122,8 @@ impl LogString {
 
 impl ToString for LogString {
     fn to_string(&self) -> String {
-        let mut lock = self.buf.lock().unwrap();
+        let buffer = get_buffer(self.buffer);
+        let mut lock = buffer.lock().unwrap();
         lock.seek(SeekFrom::Start(self.begin() + 3)).unwrap();
 
         let mut data = vec![0; self.len()];
@@ -207,7 +204,7 @@ impl LogParser {
                     let mut data = String::with_capacity(1024 * 30);
                     file.read_to_string(&mut data).unwrap();
 
-                    (Arc::new(Mutex::new(BufReader::new(file))), data, time)
+                    (add_buffer(BufReader::new(file)), data, time)
                 })
                 .filter(|(_, data, _)| !data.is_empty())
                 .collect::<Vec<_>>();
@@ -235,12 +232,8 @@ impl LogParser {
                                         while let Some(_) = data.parse_field() {}
                                         let end = data.current() as u64;
 
-                                        let line = LogString::new(
-                                            buffer.clone(),
-                                            time,
-                                            begin,
-                                            end - begin,
-                                        );
+                                        let line =
+                                            LogString::new(*buffer, time, begin, end - begin);
                                         lines[index] = Some(line);
                                         break;
                                     }
