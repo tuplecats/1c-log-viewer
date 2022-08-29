@@ -313,7 +313,7 @@ impl<'a> Widget for Renderer<'a> {
             .border_style(block_style)
             .title(
                 format!(
-                    "Row {}/{}",
+                    "{}/{}",
                     self.0.state.selected().map_or(0, |i| i + 1),
                     self.0.model.as_ref().map_or(0, |model| model.borrow().rows())
                 )
