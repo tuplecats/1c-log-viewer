@@ -109,9 +109,13 @@ impl LogCollection {
             return Ok(())
         }
 
+        let current = self.inner().filter.clone();
         match Compiler::new().compile(filter.as_str()) {
-            Ok(filter) =>  {
-                self.inner_mut().notifier.lock().unwrap().send(Some(filter)).unwrap();
+            Ok(filter) => {
+                if current.is_none() || current.unwrap() != filter {
+                    self.inner_mut().notifier.lock().unwrap().send(Some(filter)).unwrap();
+                }
+
                 Ok(())
             },
             Err(e) => Err(e)

@@ -1,11 +1,43 @@
 use std::fmt::{Display, Formatter};
 use std::iter::Peekable;
+use std::ops::Deref;
 use std::slice::Iter;
 use std::str::Chars;
 use chrono::{Duration, NaiveDateTime};
 use regex::Regex;
 use crate::parser::{FieldMap, Value};
 use thiserror::Error;
+
+#[derive(Debug, Clone)]
+pub struct RegexCmp {
+    inner: Regex,
+    value: String,
+}
+
+impl RegexCmp {
+    pub fn new<T: Into<String>>(value: T) -> Result<Self, regex::Error> {
+        let value = value.into();
+
+        Ok(RegexCmp {
+            inner: regex::Regex::new(value.as_str())?,
+            value
+        })
+    }
+}
+
+impl Deref for RegexCmp {
+    type Target = Regex;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl PartialEq for RegexCmp {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum Token {
@@ -17,7 +49,7 @@ pub enum Token {
     Identifier(String),
     String(String),
     Number(f64),
-    Regex(Regex),
+    Regex(RegexCmp),
     Date(NaiveDateTime),
     DESC,
     ASC,
@@ -41,7 +73,7 @@ impl Display for Token {
             Token::Identifier(s) => write!(f, "{}", s),
             Token::String(s) => write!(f, "{}", s),
             Token::Number(s) => write!(f, "{}", s),
-            Token::Regex(s) => write!(f, "{}", s),
+            Token::Regex(s) => write!(f, "{}", s.value),
             Token::Date(s) => write!(f, "{}", s),
             Token::DESC => write!(f, "DESC"),
             Token::ASC => write!(f, "ASC"),
@@ -106,10 +138,10 @@ impl Display for ParseError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Query {
     Expr(Option<Box<Query>>, Option<Box<Query>>),
-    Regex(Regex),
+    Regex(RegexCmp),
     And(Box<Query>, Box<Query>),
     Or(Box<Query>, Box<Query>),
 
@@ -380,7 +412,7 @@ impl Compiler {
                             tmp.push(iter.next().unwrap());
                         }
                         iter.next();
-                        tokens.push(Token::Regex(Regex::new(&tmp)?));
+                        tokens.push(Token::Regex(RegexCmp::new(&tmp)?));
                     },
                     '(' => {
                         tokens.push(Token::OpenBrace);
