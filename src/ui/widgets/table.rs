@@ -7,6 +7,7 @@ use tui::{
     style::{Color, Style},
     widgets::{Block, Borders, Widget},
 };
+use crate::parser::Value;
 
 #[derive(Default)]
 struct State {
@@ -366,8 +367,13 @@ impl<'a> Widget for Renderer<'a> {
         );
 
         let mut col = table_area.left();
+        let mut duration_col = 0;
         for (&width, cell) in column_widths.iter().zip(0..data_columns) {
             let header_data = model.header_data(cell).unwrap_or_default();
+            if header_data == "duration" {
+                duration_col = cell
+            }
+
             buf.set_stringn(
                 col,
                 table_area.top(),
@@ -406,7 +412,15 @@ impl<'a> Widget for Renderer<'a> {
             for (&width, cell) in column_widths.iter().zip(0..data_columns) {
                 let data = model
                     .data(ModelIndex::new(index, cell))
-                    .map(|d| d.to_string())
+                    .map(|d| {
+                        if duration_col == cell {
+                            if let Value::Number(d) = d {
+                                return format!("{:#?}", std::time::Duration::from_micros(d as u64))
+                            }
+                        }
+
+                        d.to_string()
+                    })
                     .unwrap_or_default();
 
                 buf.set_stringn(col, row, data, width as usize, Style::default());
